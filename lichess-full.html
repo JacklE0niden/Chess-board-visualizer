@@ -1,0 +1,1750 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+    <title>Analysis board • lichess.org</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script src="chess-board.js?v=20240104_001"></script>
+    <style>
+        :root {
+            --c-accent: #7fa650;
+            --c-accent-gradient: linear-gradient(135deg, #7fa650 0%, #6b8f44 100%);
+            --c-bg-page: #2e2a24;
+            --c-bg-overlay: rgba(0,0,0,0.5);
+            --c-font: #bababa;
+            --c-font-dim: #888;
+            --c-font-bright: #fff;
+            --c-border: #404040;
+            --c-shadow: rgba(0,0,0,0.3);
+            --c-board-bg-light: #f0d9b5;
+            --c-board-bg-dark: #b58863;
+            --c-good: #7fa650;
+            --c-bad: #dc3545;
+            --c-warn: #ff6b35;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Noto Sans', sans-serif;
+            background: var(--c-bg-page);
+            color: var(--c-font);
+            margin: 0;
+            padding: 0;
+            line-height: 1.4;
+        }
+
+        .lichess-header {
+            background: var(--c-bg-page);
+            border-bottom: 1px solid var(--c-border);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 1px 3px var(--c-shadow);
+        }
+
+        .lichess-nav {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .lichess-nav a {
+            color: var(--c-font);
+            text-decoration: none;
+            padding: 0.75rem 0.5rem;
+            border-radius: 4px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .lichess-nav a:hover {
+            background: rgba(255,255,255,0.1);
+            color: var(--c-font-bright);
+        }
+
+        .lichess-nav a.active {
+            color: var(--c-accent);
+        }
+
+        .lichess-nav a.active::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 20px;
+            height: 2px;
+            background: var(--c-accent);
+            border-radius: 1px;
+        }
+
+        .site-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--c-font-bright);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .site-title:hover {
+            color: var(--c-accent);
+        }
+
+        .lichess-board {
+            background: var(--c-board-bg-light);
+            border: 2px solid var(--c-board-bg-dark);
+            border-radius: 4px;
+            box-shadow: 0 4px 12px var(--c-shadow);
+            position: relative;
+        }
+
+        .board-square {
+            width: 3rem;
+            height: 3rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .board-square.light {
+            background: var(--c-board-bg-light);
+        }
+
+        .board-square.dark {
+            background: var(--c-board-bg-dark);
+        }
+
+        .board-square:hover {
+            background: rgba(127, 166, 80, 0.3) !important;
+        }
+
+        /* 标注模式下的悬停效果 */
+        .board-square.marking-mode:hover {
+            background: rgba(255, 255, 0, 0.3) !important;
+        }
+
+        /* 标注模式样式 - 留边距效果 */
+        .board-square.marked-activation {
+            background: rgba(239, 68, 68, 0.8) !important;
+            margin: 2px !important;
+            width: calc(3rem - 4px) !important;
+            height: calc(3rem - 4px) !important;
+            border-radius: 2px;
+        }
+
+        .board-square.marked-zpattern {
+            background: rgba(59, 130, 246, 0.8) !important;
+            margin: 2px !important;
+            width: calc(3rem - 4px) !important;
+            height: calc(3rem - 4px) !important;
+            border-radius: 2px;
+        }
+
+        .board-square.last-move {
+            box-shadow: inset 0 0 0 3px var(--c-accent);
+        }
+
+        .board-square.check {
+            box-shadow: inset 0 0 0 3px var(--c-bad);
+        }
+
+        .piece {
+            width: 2.8rem;
+            height: 2.8rem;
+            transition: transform 0.1s ease;
+            user-select: none;
+            pointer-events: none;
+        }
+
+        .piece:hover {
+            transform: scale(1.1);
+        }
+
+        .coord {
+            position: absolute;
+            font-size: 0.6rem;
+            font-weight: 700;
+            user-select: none;
+            pointer-events: none;
+            z-index: 15; /* 提高z-index，确保在最上层 */
+            opacity: 0.9; /* 提高透明度 */
+            display: block !important; /* 强制显示 */
+        }
+
+        .coord.dark {
+            color: var(--c-board-bg-light); /* 浅灰色用于深色格子 */
+        }
+
+        .coord.light {
+            color: var(--c-board-bg-dark); /* 深色文字用于浅色格子 */
+        }
+
+        .coord.rank {
+            top: 2px;
+            right: 2px;
+        }
+
+        .coord.file {
+            bottom: 2px;
+            left: 2px;
+        }
+
+        .activation-badge {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            background: rgba(220, 53, 69, 0.9);
+            color: white;
+            border-radius: 2px;
+            padding: 1px 3px;
+            font-size: 0.6rem;
+            font-weight: 700;
+            z-index: 10;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+        }
+
+        .lichess-sidebar {
+            background: var(--c-bg-page);
+            border-left: 1px solid var(--c-border);
+            min-height: 100vh;
+        }
+
+        .lichess-panel {
+            background: rgba(255,255,255,0.02);
+            border: 1px solid var(--c-border);
+            border-radius: 6px;
+            margin-bottom: 1rem;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            background: rgba(255,255,255,0.05);
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--c-border);
+            font-weight: 600;
+            color: var(--c-font-bright);
+        }
+
+        .panel-content {
+            padding: 1rem;
+        }
+
+        .lichess-button {
+            background: var(--c-accent);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.875rem;
+        }
+
+        .lichess-button:hover {
+            background: #6b8f44;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .lichess-button.secondary {
+            background: rgba(255,255,255,0.1);
+            color: var(--c-font);
+            border: 1px solid var(--c-border);
+        }
+
+        .lichess-button.secondary:hover {
+            background: rgba(255,255,255,0.15);
+            color: var(--c-font-bright);
+        }
+
+        .lichess-input {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid var(--c-border);
+            color: var(--c-font-bright);
+            padding: 0.5rem 0.75rem;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+            width: 100%;
+            transition: all 0.2s ease;
+        }
+
+        .lichess-input:focus {
+            outline: none;
+            border-color: var(--c-accent);
+            background: rgba(255,255,255,0.12);
+            box-shadow: 0 0 0 2px rgba(127, 166, 80, 0.2);
+        }
+
+        .eval-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 0.5rem 0;
+        }
+
+        .eval-fill {
+            height: 100%;
+            transition: width 0.5s ease;
+        }
+
+        .eval-fill.white {
+            background: linear-gradient(90deg, #fff 0%, #e0e0e0 100%);
+        }
+
+        .eval-fill.black {
+            background: linear-gradient(90deg, #333 0%, #555 100%);
+        }
+
+        .move-list {
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            background: rgba(0,0,0,0.2);
+            border-radius: 4px;
+            padding: 0.5rem;
+        }
+
+        .move-item {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            margin: 0.125rem;
+            background: rgba(255,255,255,0.05);
+            border-radius: 3px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.875rem;
+        }
+
+        .move-item:hover {
+            background: rgba(127, 166, 80, 0.3);
+            color: var(--c-font-bright);
+        }
+
+        .move-item.current {
+            background: var(--c-accent);
+            color: white;
+            font-weight: 600;
+        }
+
+        .lichess-toolbar {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-bottom: 1rem;
+            padding: 0.5rem;
+            background: rgba(255,255,255,0.02);
+            border-radius: 6px;
+        }
+
+        .tool-button {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid var(--c-border);
+            color: var(--c-font);
+            padding: 0.375rem 0.75rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        .tool-button:hover {
+            background: rgba(255,255,255,0.15);
+            border-color: var(--c-accent);
+            color: var(--c-font-bright);
+        }
+
+        .tool-button.active {
+            background: var(--c-accent);
+            color: white;
+            border-color: var(--c-accent);
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            background: rgba(255,255,255,0.05);
+            border-radius: 6px;
+            font-weight: 500;
+        }
+
+        .player-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 2px solid var(--c-border);
+        }
+
+        .player-indicator.white {
+            background: white;
+        }
+
+        .player-indicator.black {
+            background: #333;
+        }
+
+        .depth-info {
+            font-size: 0.75rem;
+            color: var(--c-font-dim);
+            text-align: center;
+            margin-top: 0.25rem;
+        }
+
+        .marking-status {
+            padding: 0.5rem;
+            background: rgba(255,255,255,0.02);
+            border-radius: 6px;
+            margin-top: 0.5rem;
+            border: 1px solid var(--c-border);
+        }
+
+        .best-moves {
+            display: grid;
+            gap: 0.5rem;
+        }
+
+        .best-move-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.5rem 0.75rem;
+            background: rgba(255,255,255,0.03);
+            border-radius: 4px;
+            transition: background-color 0.2s ease;
+        }
+
+        .best-move-item:hover {
+            background: rgba(255,255,255,0.08);
+        }
+
+        .move-notation {
+            font-family: 'Courier New', monospace;
+            font-weight: 600;
+            color: var(--c-font-bright);
+        }
+
+        .move-score {
+            font-weight: 600;
+            padding: 0.125rem 0.375rem;
+            border-radius: 3px;
+            font-size: 0.8rem;
+        }
+
+        .move-score.positive {
+            background: rgba(127, 166, 80, 0.2);
+            color: var(--c-good);
+        }
+
+        .move-score.negative {
+            background: rgba(220, 53, 69, 0.2);
+            color: var(--c-bad);
+        }
+
+        .move-score.neutral {
+            background: rgba(255,255,255,0.1);
+            color: var(--c-font);
+        }
+
+        .analysis-move-item {
+            transition: background-color 0.2s ease;
+        }
+
+        .analysis-move-item:hover {
+            background: rgba(255,255,255,0.05);
+        }
+
+        .analysis-arrow {
+            pointer-events: none;
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .lichess-sidebar {
+                display: none;
+            }
+
+            .lichess-nav {
+                display: none;
+            }
+
+            .board-square {
+                width: 2.5rem;
+                height: 2.5rem;
+            }
+
+            .board-square.marked-activation,
+            .board-square.marked-zpattern {
+                width: calc(2.5rem - 4px) !important;
+                height: calc(2.5rem - 4px) !important;
+            }
+
+            .piece {
+                width: 2.2rem;
+                height: 2.2rem;
+            }
+        }
+
+        /* 滚动条样式 */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(255,255,255,0.05);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.2);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255,255,255,0.3);
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <header class="lichess-header">
+        <div class="max-w-7xl mx-auto px-4 py-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-6">
+                    <a href="#" class="site-title">
+                        <span style="font-size: 2rem;">♔</span>
+                        <span>lichess</span>
+                    </a>
+                    <nav class="lichess-nav">
+                        <a href="#" class="active">Analysis</a>
+                        <a href="#">Puzzles</a>
+                        <a href="#">Learn</a>
+                        <a href="#">Watch</a>
+                        <a href="#">Community</a>
+                        <a href="#">Tools</a>
+                    </nav>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <button class="lichess-button secondary">Sign in</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="flex">
+        <!-- 左侧面板 - 留空或放其他内容 -->
+        <div class="w-16">
+            <!-- 左侧可以保持简洁，或添加其他小组件 -->
+        </div>
+
+        <!-- 中间内容区域 - 棋盘 -->
+        <div class="flex-1 flex flex-col">
+            <!-- 工具栏 -->
+            <div class="lichess-toolbar">
+                <button class="tool-button active" onclick="setMode('analysis')">
+                    <span style="color: var(--c-accent);">📊</span> Analysis
+                </button>
+                <button class="tool-button" onclick="setMode('explore')">
+                    <span>🔍</span> Explore
+                </button>
+                <button class="tool-button" onclick="flipBoard()">
+                    <span>🔄</span> Flip board
+                </button>
+                <button class="tool-button" onclick="clearBoard()">
+                    <span>🧹</span> Clear
+                </button>
+                <button class="tool-button" onclick="toggleCoordinates()">
+                    <span>📍</span> Coords
+                </button>
+                <button class="tool-button" onclick="exportToSVG()">
+                    <span>📥</span> Export SVG
+                </button>
+                <button class="tool-button" onclick="toggleActivationMarking()" id="activation-marking-btn">
+                    <span>🔴</span> Mark Activation
+                </button>
+                <button class="tool-button" onclick="toggleZPatternMarking()" id="zpattern-marking-btn">
+                    <span>🔵</span> Mark Z-Pattern
+                </button>
+                <button class="tool-button" onclick="clearAllMarkings()">
+                    <span>🧹</span> Clear Marks
+                </button>
+                <button class="tool-button" onclick="toggleArrowMode()" id="arrow-mode-btn">
+                    <span>➡️</span> Add Arrow
+                </button>
+                <div class="flex-1"></div>
+                <div class="status-indicator">
+                    <div class="player-indicator white"></div>
+                    <span>White to move</span>
+                </div>
+            </div>
+
+            <!-- 标注状态指示器 -->
+            <div class="marking-status" id="marking-status" style="display: none;">
+                <div class="flex items-center gap-2 text-sm text-gray-600">
+                    <span id="marking-mode-text">标注模式激活</span>
+                    <span id="marked-count">0 个格子已标注</span>
+                </div>
+            </div>
+
+            <!-- 棋盘容器 -->
+            <div class="flex justify-center p-8">
+                <div class="relative">
+                    <!-- 棋盘 -->
+                    <div class="lichess-board">
+                        <div id="chessboard" class="grid grid-cols-8 grid-rows-8">
+                            <!-- 棋盘格子将在这里动态生成 -->
+                        </div>
+                    </div>
+
+                    <!-- 移动箭头层 -->
+                    <svg id="arrows-layer" class="absolute inset-0 pointer-events-none" width="100%" height="100%">
+                        <defs>
+                            <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                                <path d="M0,0 L0,8 L8,4 z" fill="var(--c-accent)" />
+                            </marker>
+                        </defs>
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧面板 -->
+        <aside class="lichess-sidebar w-80">
+            <!-- 局面评估 -->
+            <div class="lichess-panel">
+                <div class="panel-header">
+                    Computer evaluation
+                </div>
+                <div class="panel-content">
+                    <div class="text-center">
+                        <div class="text-2xl font-bold text-green-400 mb-2">+0.3</div>
+                        <div class="eval-bar">
+                            <div class="eval-fill white" style="width: 53%"></div>
+                            <div class="eval-fill black" style="width: 47%"></div>
+                        </div>
+                        <div class="depth-info">Depth: 18/25</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 最佳着法 -->
+            <div class="lichess-panel">
+                <div class="panel-header">
+                    Best moves
+                </div>
+                <div class="panel-content">
+                    <div class="best-moves">
+                        <div class="best-move-item">
+                            <span class="move-notation">e2e4</span>
+                            <span class="move-score positive">+0.3</span>
+                        </div>
+                        <div class="best-move-item">
+                            <span class="move-notation">d2d4</span>
+                            <span class="move-score neutral">+0.2</span>
+                        </div>
+                        <div class="best-move-item">
+                            <span class="move-notation">Nf3</span>
+                            <span class="move-score neutral">+0.1</span>
+                        </div>
+                        <div class="best-move-item">
+                            <span class="move-notation">c2c4</span>
+                            <span class="move-score neutral">+0.1</span>
+                        </div>
+                        <div class="best-move-item">
+                            <span class="move-notation">g2g3</span>
+                            <span class="move-score negative">-0.1</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 局面信息 -->
+            <div class="lichess-panel">
+                <div class="panel-header">
+                    Position
+                </div>
+                <div class="panel-content">
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-xs font-medium mb-1 text-gray-300">FEN</label>
+                            <input
+                                id="fen-input"
+                                type="text"
+                                value="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+                                class="lichess-input text-xs"
+                            />
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium mb-1 text-gray-300">Activations (optional)</label>
+                            <textarea
+                                id="activations-input"
+                                placeholder="64 comma-separated values..."
+                                class="lichess-input text-xs h-20 resize-none"
+                            ></textarea>
+                        </div>
+                        <button onclick="updateBoard()" class="lichess-button w-full">
+                            Analyze position
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 移动历史 -->
+            <div class="lichess-panel">
+                <div class="panel-header">
+                    Move history
+                </div>
+                <div class="panel-content">
+                    <div class="move-list" id="move-history">
+                        <span class="move-item current">1. e4</span>
+                        <span class="move-item">e5</span>
+                        <span class="move-item">2. Nf3</span>
+                        <span class="move-item">Nc6</span>
+                        <span class="move-item">3. Bb5</span>
+                        <span class="move-item">a6</span>
+                        <span class="move-item">4. Ba4</span>
+                        <span class="move-item">Nf6</span>
+                        <span class="move-item">5. O-O</span>
+                        <span class="move-item">Be7</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 箭头管理面板 -->
+            <div class="lichess-panel" id="arrows-panel" style="display: none;">
+                <div class="panel-header">
+                    <div class="flex items-center justify-between">
+                        <span>Arrows</span>
+                        <button onclick="clearAllArrows()" class="text-xs text-red-400 hover:text-red-300">Clear All</button>
+                    </div>
+                </div>
+                <div class="panel-content">
+                    <div id="arrows-list" class="max-h-96 overflow-y-auto">
+                        <div class="text-center text-gray-400 text-sm py-4">No arrows yet. Click squares to add arrows.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 箭头管理面板 -->
+            <div class="lichess-panel" id="arrow-panel" style="display: none;">
+                <div class="panel-header">
+                    <div class="flex items-center justify-between">
+                        <span>Arrows</span>
+                        <button onclick="clearAllArrows()" class="text-xs text-red-400 hover:text-red-300">Clear All</button>
+                    </div>
+                </div>
+                <div class="panel-content">
+                    <div class="mb-4 space-y-3">
+                        <div>
+                            <label class="block text-xs font-medium mb-1 text-gray-300">Color</label>
+                            <input type="color" id="arrow-color-picker" value="#3b82f6" class="w-full h-8 rounded border border-gray-600">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium mb-1 text-gray-300">Width</label>
+                            <input type="range" id="arrow-width-slider" min="2" max="20" value="5" class="w-full">
+                            <div class="text-xs text-gray-400 text-center mt-1"><span id="arrow-width-value">5</span>px</div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium mb-1 text-gray-300">Opacity</label>
+                            <input type="range" id="arrow-opacity-slider" min="0.1" max="1" step="0.1" value="0.9" class="w-full">
+                            <div class="text-xs text-gray-400 text-center mt-1"><span id="arrow-opacity-value">90</span>%</div>
+                        </div>
+                    </div>
+                    <div id="arrows-list" class="max-h-96 overflow-y-auto">
+                        <div class="text-center text-gray-400 text-sm py-4">No arrows yet. Click two squares to add an arrow.</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <script>
+
+
+
+
+        // 更新棋盘
+        function updateBoard() {
+            const fenInput = document.getElementById('fen-input');
+            const activationsInput = document.getElementById('activations-input');
+
+            try {
+                const parsed = parseFEN(fenInput.value);
+                currentBoard = parsed.board;
+
+                // 解析激活值
+                if (activationsInput.value.trim()) {
+                    currentActivations = activationsInput.value.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
+                    if (currentActivations.length !== 64) {
+                        currentActivations = new Array(64).fill(0);
+                    }
+                } else {
+                    currentActivations = new Array(64).fill(0);
+                }
+
+                renderBoard();
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        // 设置模式
+        function setMode(mode) {
+            currentMode = mode;
+
+            // 更新工具栏按钮状态
+            document.querySelectorAll('.tool-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+
+            if (mode === 'analysis') {
+                document.querySelector('button[onclick*="setMode(\'analysis\'"]').classList.add('active');
+            } else if (mode === 'explore') {
+                document.querySelector('button[onclick*="setMode(\'explore\'"]').classList.add('active');
+            }
+
+            renderBoard();
+        }
+
+        // 翻转棋盘
+        function flipBoard() {
+            isFlipped = !isFlipped;
+            renderBoard();
+        }
+
+        // 清除棋盘高亮
+        function clearBoard() {
+            currentActivations = new Array(64).fill(0);
+            renderBoard();
+        }
+
+        // 切换坐标显示
+        function toggleCoordinates() {
+            showCoordinates = !showCoordinates;
+            const coords = document.querySelectorAll('.coord');
+            coords.forEach(coord => {
+                coord.style.display = showCoordinates ? 'block' : 'none';
+            });
+        }
+
+        // 更新标注状态显示
+        function updateMarkingStatus() {
+            const statusDiv = document.getElementById('marking-status');
+            const modeText = document.getElementById('marking-mode-text');
+            const countText = document.getElementById('marked-count');
+
+            if (isActivationMarkingMode) {
+                statusDiv.style.display = 'block';
+                modeText.textContent = '🔴 激活标注模式';
+                countText.textContent = `${markedActivations.size} 个格子已标注`;
+            } else if (isZPatternMarkingMode) {
+                statusDiv.style.display = 'block';
+                modeText.textContent = '🔵 Z模式标注模式';
+                countText.textContent = `${markedZPatterns.size} 个格子已标注`;
+            } else {
+                statusDiv.style.display = 'none';
+            }
+        }
+
+        // 切换激活标注模式
+        function toggleActivationMarking() {
+            isActivationMarkingMode = !isActivationMarkingMode;
+            isZPatternMarkingMode = false; // 互斥
+
+            const activationBtn = document.getElementById('activation-marking-btn');
+            const zpatternBtn = document.getElementById('zpattern-marking-btn');
+
+            if (isActivationMarkingMode) {
+                activationBtn.classList.add('active');
+                zpatternBtn.classList.remove('active');
+            } else {
+                activationBtn.classList.remove('active');
+            }
+
+            updateMarkingStatus();
+            renderBoard(); // 重新渲染以更新光标样式
+        }
+
+        // 切换Z模式标注模式
+        function toggleZPatternMarking() {
+            isZPatternMarkingMode = !isZPatternMarkingMode;
+            isActivationMarkingMode = false; // 互斥
+
+            const activationBtn = document.getElementById('activation-marking-btn');
+            const zpatternBtn = document.getElementById('zpattern-marking-btn');
+
+            if (isZPatternMarkingMode) {
+                zpatternBtn.classList.add('active');
+                activationBtn.classList.remove('active');
+            } else {
+                zpatternBtn.classList.remove('active');
+            }
+
+            updateMarkingStatus();
+            renderBoard(); // 重新渲染以更新光标样式
+        }
+
+        // 清除所有标注
+        function clearAllMarkings() {
+            markedActivations.clear();
+            markedZPatterns.clear();
+            updateMarkingStatus();
+            renderBoard();
+        }
+
+        window.arrowMode = false;
+        let arrows = [];
+        let selectedArrowFromSquare = null;
+
+        function toggleArrowMode() {
+            window.arrowMode = !window.arrowMode;
+            selectedArrowFromSquare = null;
+            
+            const btn = document.getElementById('arrow-mode-btn');
+            if (window.arrowMode) {
+                btn.classList.add('active');
+                document.getElementById('arrows-panel').style.display = 'block';
+                updateArrowsPanel();
+            } else {
+                btn.classList.remove('active');
+                document.getElementById('arrows-panel').style.display = 'none';
+            }
+            
+            renderBoard();
+        }
+
+        function handleArrowSquareClick(squareIndex) {
+            if (!window.arrowMode) return;
+
+            const row = Math.floor(squareIndex / 8);
+            const col = squareIndex % 8;
+            const squareName = String.fromCharCode(97 + col) + (8 - row);
+
+            if (selectedArrowFromSquare === null) {
+                selectedArrowFromSquare = { index: squareIndex, name: squareName };
+            } else {
+                if (selectedArrowFromSquare.index === squareIndex) {
+                    selectedArrowFromSquare = null;
+                } else {
+                    const newArrow = {
+                        id: Date.now(),
+                        from: selectedArrowFromSquare.name,
+                        to: squareName,
+                        color: '#3b82f6',
+                        width: 6,
+                        markerSize: 12,
+                        opacity: 0.9
+                    };
+                    arrows.push(newArrow);
+                    selectedArrowFromSquare = null;
+                    updateArrowsPanel();
+                }
+            }
+            
+            renderBoard();
+            renderArrows();
+        }
+
+        function updateArrowsPanel() {
+            const panel = document.getElementById('arrows-list');
+            if (arrows.length === 0) {
+                panel.innerHTML = '<div class="text-center text-gray-400 text-sm py-4">No arrows yet. Click two squares to add an arrow.</div>';
+                return;
+            }
+
+            panel.innerHTML = arrows.map((arrow, idx) => `
+                <div class="analysis-move-item p-2 border-b border-gray-700">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center space-x-2">
+                            <div class="w-3 h-3 rounded-full border border-gray-500" style="background-color: ${arrow.color}; opacity: ${arrow.opacity}"></div>
+                            <span class="font-mono text-sm font-semibold text-white">${arrow.from} → ${arrow.to}</span>
+                        </div>
+                        <button onclick="deleteArrow(${idx})" class="text-red-400 hover:text-red-300 text-xs">Delete</button>
+                    </div>
+                    <div class="space-y-2 text-xs">
+                        <div class="flex items-center space-x-2">
+                            <label class="text-gray-400 w-16">From:</label>
+                            <input type="text" value="${arrow.from}" onchange="updateArrowFrom(${idx}, this.value)" 
+                                   class="flex-1 px-2 py-1 bg-gray-800 border border-gray-600 rounded text-white focus:outline-none focus:border-green-500" />
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-gray-400 w-16">To:</label>
+                            <input type="text" value="${arrow.to}" onchange="updateArrowTo(${idx}, this.value)" 
+                                   class="flex-1 px-2 py-1 bg-gray-800 border border-gray-600 rounded text-white focus:outline-none focus:border-green-500" />
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-gray-400 w-16">Line Width:</label>
+                            <input type="range" min="1" max="20" step="1" value="${arrow.width || 6}" 
+                                   oninput="updateArrowWidth(${idx}, parseInt(this.value) || 6); document.getElementById('arrow-width-display-${idx}').textContent = this.value"
+                                   class="flex-1" />
+                            <span id="arrow-width-display-${idx}" class="text-gray-400 w-8 text-right">${arrow.width || 6}</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-gray-400 w-16">Arrow Size:</label>
+                            <input type="range" min="4" max="30" step="1" value="${arrow.markerSize || 12}" 
+                                   oninput="updateArrowMarkerSize(${idx}, parseInt(this.value) || 12); document.getElementById('arrow-marker-size-display-${idx}').textContent = this.value"
+                                   class="flex-1" />
+                            <span id="arrow-marker-size-display-${idx}" class="text-gray-400 w-8 text-right">${arrow.markerSize || 12}</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-gray-400 w-16">Color:</label>
+                            <input type="color" value="${arrow.color}" onchange="updateArrowColor(${idx}, this.value)" 
+                                   class="flex-1 h-8 bg-gray-800 border border-gray-600 rounded cursor-pointer" />
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-gray-400 w-16">Opacity:</label>
+                            <input type="number" min="0" max="1" step="0.1" value="${arrow.opacity}" 
+                                   onchange="updateArrowOpacity(${idx}, parseFloat(this.value) || 0.9)" 
+                                   class="flex-1 px-2 py-1 bg-gray-800 border border-gray-600 rounded text-white focus:outline-none focus:border-green-500" />
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateArrowFrom(index, value) {
+            if (arrows[index] && /^[a-h][1-8]$/.test(value)) {
+                arrows[index].from = value;
+                renderArrows();
+            }
+        }
+
+        function updateArrowTo(index, value) {
+            if (arrows[index] && /^[a-h][1-8]$/.test(value)) {
+                arrows[index].to = value;
+                renderArrows();
+            }
+        }
+
+        function updateArrowColor(index, color) {
+            if (arrows[index]) {
+                arrows[index].color = color;
+                updateArrowsPanel();
+                renderArrows();
+            }
+        }
+
+        function updateArrowWidth(index, width) {
+            if (arrows[index]) {
+                arrows[index].width = Math.max(1, Math.min(20, width));
+                renderArrows();
+            }
+        }
+
+        function updateArrowOpacity(index, opacity) {
+            if (arrows[index]) {
+                arrows[index].opacity = Math.max(0, Math.min(1, opacity));
+                updateArrowsPanel();
+                renderArrows();
+            }
+        }
+
+        function updateArrowMarkerSize(index, markerSize) {
+            if (arrows[index]) {
+                arrows[index].markerSize = Math.max(4, Math.min(30, markerSize));
+                renderArrows();
+            }
+        }
+
+        function deleteArrow(index) {
+            arrows.splice(index, 1);
+            updateArrowsPanel();
+            renderArrows();
+        }
+
+        function clearAllArrows() {
+            arrows = [];
+            selectedArrowFromSquare = null;
+            updateArrowsPanel();
+            renderArrows();
+        }
+
+        function renderArrows() {
+            const svgLayer = document.getElementById('arrows-layer');
+            if (!svgLayer) return;
+
+            let defs = svgLayer.querySelector('defs');
+            if (!defs) {
+                defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+                svgLayer.appendChild(defs);
+            }
+
+            // 清除旧的箭头标记和箭头
+            const existingMarkers = defs.querySelectorAll('[id^="custom-arrow-marker-"]');
+            existingMarkers.forEach(marker => marker.remove());
+            const existingArrows = svgLayer.querySelectorAll('.custom-arrow');
+            existingArrows.forEach(arrow => arrow.remove());
+
+            // 为每个箭头创建唯一的标记
+            arrows.forEach((arrow, idx) => {
+                const markerSize = arrow.markerSize || 12;
+                const arrowTipX = markerSize * 0.8;
+                const centerY = markerSize / 2;
+                const topY = 0;
+                const bottomY = markerSize;
+                
+                // 计算箭头三角形的几何中心（重心）
+                // 三角形顶点：(0,0), (0,markerSize), (arrowTipX, centerY)
+                // 重心 = ((x1+x2+x3)/3, (y1+y2+y3)/3)
+                const centroidX = arrowTipX / 3;
+                const centroidY = markerSize / 2;
+                
+                const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+                marker.setAttribute('id', `custom-arrow-marker-${arrow.id}`);
+                marker.setAttribute('markerWidth', markerSize.toString());
+                marker.setAttribute('markerHeight', markerSize.toString());
+                marker.setAttribute('refX', '0'); // 设置为0，使箭头底部对齐到线条终点
+                marker.setAttribute('refY', centroidY.toString()); // refY在marker中心，使箭头几何中心与格子中心等高
+                marker.setAttribute('orient', 'auto');
+                marker.setAttribute('markerUnits', 'userSpaceOnUse'); // 使箭头大小独立于线宽
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                // 箭头路径：从底部开始
+                path.setAttribute('d', `M0,${topY} L0,${bottomY} L${arrowTipX},${centerY} z`);
+                path.setAttribute('fill', arrow.color);
+                path.setAttribute('fill-opacity', arrow.opacity.toString()); // 设置箭头透明度
+                marker.appendChild(path);
+                defs.appendChild(marker);
+
+                const from = parseSquareNotation(arrow.from);
+                const to = parseSquareNotation(arrow.to);
+                if (!from || !to) return;
+
+                const displayFromRow = isFlipped ? (7 - from.row) : from.row;
+                const displayFromCol = isFlipped ? (7 - from.col) : from.col;
+                const displayToRow = isFlipped ? (7 - to.row) : to.row;
+                const displayToCol = isFlipped ? (7 - to.col) : to.col;
+
+                const squareSize = 48;
+                const x1 = displayFromCol * squareSize + squareSize / 2;
+                const y1 = displayFromRow * squareSize + squareSize / 2;
+                const targetX = displayToCol * squareSize + squareSize / 2;
+                const targetY = displayToRow * squareSize + squareSize / 2;
+                
+                // 计算从起点到终点的方向和距离
+                const dx = targetX - x1;
+                const dy = targetY - y1;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                // 计算单位向量
+                const unitX = dx / distance;
+                const unitY = dy / distance;
+                
+                // 缩短线条，使箭头底部对齐到目标格子
+                // 由于refX=0，箭头底部会在线条终点
+                // 要让箭头几何中心在目标格子的下1/3处且水平居中，需要计算：
+                // - 格子下1/3处 = targetY + squareSize/6 (从格子中心向下移动squareSize/6)
+                // - 箭头几何中心在箭头底部上方centroidX的位置（沿箭头方向）
+                // - 所以箭头底部应该在 (targetX, targetY + squareSize/6) - centroidX * (unitX, unitY)
+                const targetCenterY = targetY + squareSize / 6; // 格子下1/3处
+                // 箭头底部位置：让箭头几何中心在 (targetX, targetCenterY)
+                // 箭头几何中心在箭头底部上方centroidX的位置（沿箭头方向）
+                // 如果箭头右侧对齐到了格子中心，说明箭头中心偏右了
+                // 箭头最右侧在箭头方向上的距离是arrowTipX，箭头中心在箭头底部上方centroidX
+                // 箭头右侧相对于箭头中心的偏移是 (arrowTipX - centroidX)
+                // 要让箭头中心在targetX，需要补偿这个偏移
+                const offsetFromCenterToRight = arrowTipX - centroidX; // 箭头中心到箭头右侧的距离
+                const x2 = targetX - unitX * centroidX - unitX * offsetFromCenterToRight;
+                const y2 = targetCenterY - unitY * centroidX - unitY * offsetFromCenterToRight;
+
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('class', 'custom-arrow');
+                line.setAttribute('x1', x1);
+                line.setAttribute('y1', y1);
+                line.setAttribute('x2', x2);
+                line.setAttribute('y2', y2);
+                line.setAttribute('stroke', arrow.color);
+                line.setAttribute('stroke-width', arrow.width);
+                line.setAttribute('stroke-opacity', arrow.opacity);
+                line.setAttribute('marker-end', `url(#custom-arrow-marker-${arrow.id})`);
+                svgLayer.appendChild(line);
+            });
+        }
+
+        function parseSquareNotation(notation) {
+            if (!notation || notation.length !== 2) return null;
+            const col = notation.charCodeAt(0) - 97;
+            const row = 8 - parseInt(notation[1]);
+            if (col < 0 || col > 7 || row < 0 || row > 7) return null;
+            return { row, col };
+        }
+
+        // Unicode棋子符号映射 (用于SVG导出)
+        const PIECE_UNICODE = {
+            'K': '♔', 'Q': '♕', 'R': '♖', 'B': '♗', 'N': '♘', 'P': '♙',
+            'k': '♚', 'q': '♛', 'r': '♜', 'b': '♝', 'n': '♞', 'p': '♟'
+        };
+
+        // 更新parseFEN函数，使其与TSX版本一致
+        function parseFEN(fen) {
+            const parts = fen.trim().split(' ');
+            if (parts.length < 4) {
+                throw new Error('Invalid FEN string');
+            }
+
+            const [boardPart, activeColor, castling, enPassant] = parts;
+            const rows = boardPart.split('/');
+
+            if (rows.length !== 8) {
+                throw new Error('Invalid board configuration in FEN');
+            }
+
+            // 将FEN转换为8x8数组
+            const board = [];
+
+            for (let i = 0; i < 8; i++) {
+                const row = [];
+                const rowStr = rows[i];
+
+                for (const char of rowStr) {
+                    if (/\d/.test(char)) {
+                        // 数字表示空格数量
+                        const emptySquares = parseInt(char);
+                        for (let j = 0; j < emptySquares; j++) {
+                            row.push(null);
+                        }
+                    } else {
+                        // 棋子字符
+                        row.push(char);
+                    }
+                }
+
+                board.push(row);
+            }
+
+            return {
+                board,
+                activeColor,
+                castling,
+                enPassant,
+                isWhiteToMove: activeColor === 'w'
+            };
+        }
+
+        // 导出为SVG
+        function exportToSVG() {
+            const svgNS = "http://www.w3.org/2000/svg";
+            const svg = document.createElementNS(svgNS, "svg");
+            svg.setAttribute("width", "320");
+            svg.setAttribute("height", "320");
+            svg.setAttribute("viewBox", "0 0 320 320");
+            svg.setAttribute("xmlns", svgNS);
+
+            const squareSize = 40; // 每个格子40px
+
+            // 绘制棋盘背景
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    // 当翻转时，黑白格子也要反转，确保h1始终是白格
+                    const isLight = isFlipped ? (row + col) % 2 !== 0 : (row + col) % 2 === 0;
+                    const rect = document.createElementNS(svgNS, "rect");
+                    rect.setAttribute("x", col * squareSize);
+                    rect.setAttribute("y", row * squareSize);
+                    rect.setAttribute("width", squareSize);
+                    rect.setAttribute("height", squareSize);
+
+                    // 检查是否有标注
+                    const actualRow = isFlipped ? (7 - row) : row;
+                    const actualCol = isFlipped ? (7 - col) : col;
+                    const activationIndex = actualRow * 8 + actualCol;
+                    const isMarkedActivation = markedActivations.has(activationIndex);
+                    const isMarkedZPattern = markedZPatterns.has(activationIndex);
+
+                    // 根据标注设置背景色
+                    let fillColor;
+                    if (isMarkedActivation) {
+                        fillColor = "rgba(239, 68, 68, 0.8)"; // 红色标注
+                    } else if (isMarkedZPattern) {
+                        fillColor = "rgba(59, 130, 246, 0.8)"; // 蓝色标注
+                    } else {
+                        fillColor = isLight ? "#f0d9b5" : "#b58863";
+                    }
+
+                    rect.setAttribute("fill", fillColor);
+                    svg.appendChild(rect);
+                }
+            }
+
+            // 绘制坐标（如果显示）
+            if (showCoordinates) {
+                for (let row = 0; row < 8; row++) {
+                    // 行号（1-8）- 在最右边一列
+                    const rankText = document.createElementNS(svgNS, "text");
+                    rankText.setAttribute("x", 7 * squareSize + 2);
+                    rankText.setAttribute("y", row * squareSize + 12);
+                    rankText.setAttribute("font-size", "10");
+                    rankText.setAttribute("font-weight", "bold");
+                    // 根据格子颜色决定文字颜色（考虑翻转）
+                    const isLightSquare = isFlipped ? (row + 7) % 2 !== 0 : (row + 7) % 2 === 0; // col=7
+                    rankText.setAttribute("fill", isLightSquare ? "#654321" : "#ffffff");
+                    rankText.setAttribute("font-family", "Arial, sans-serif");
+                    rankText.setAttribute("text-anchor", "start");
+                    rankText.setAttribute("dominant-baseline", "hanging");
+                    // 翻转时行号也需要反转：未翻转row=0显示8；翻转后row=0显示1
+                    const displayRow = isFlipped ? (7 - row) : row;
+                    rankText.textContent = (8 - displayRow).toString();
+                    svg.appendChild(rankText);
+                }
+
+                // 列字母（a-h）- 在最下面一行
+                for (let col = 0; col < 8; col++) {
+                    const fileText = document.createElementNS(svgNS, "text");
+                    fileText.setAttribute("x", col * squareSize + 2);
+                    fileText.setAttribute("y", 318);
+                    fileText.setAttribute("font-size", "10");
+                    fileText.setAttribute("font-weight", "bold");
+                    // 根据格子颜色决定文字颜色（考虑翻转）
+                    const isLightSquare = isFlipped ? (7 + col) % 2 === 0 : (7 + col) % 2 !== 0; // row=7
+                    fileText.setAttribute("fill", isLightSquare ? "#654321" : "#ffffff");
+                    fileText.setAttribute("font-family", "Arial, sans-serif");
+                    fileText.setAttribute("text-anchor", "start");
+                    fileText.setAttribute("dominant-baseline", "auto");
+                    const fileLetters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+                    // 翻转时列字母要反转：未翻转从左到右a-h；翻转后从左到右h-a
+                    const displayCol = isFlipped ? (7 - col) : col;
+                    fileText.textContent = fileLetters[displayCol];
+                    svg.appendChild(fileText);
+                }
+            }
+
+            // 绘制棋子
+            const displayBoard = isFlipped ? [...currentBoard].reverse().map(row => [...row].reverse()) : currentBoard;
+
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const piece = displayBoard[row][col];
+                    if (piece) {
+                        // 使用Unicode符号绘制棋子
+                        const pieceText = document.createElementNS(svgNS, "text");
+                        pieceText.setAttribute("x", col * squareSize + squareSize / 2);
+                        pieceText.setAttribute("y", row * squareSize + squareSize / 2 + 6); // 精确居中对齐
+                        pieceText.setAttribute("font-size", "28"); // 稍微调小以适应格子
+                        pieceText.setAttribute("font-family", "Arial Unicode MS, Arial, sans-serif");
+                        pieceText.setAttribute("text-anchor", "middle");
+                        pieceText.setAttribute("dominant-baseline", "central"); // 垂直居中
+                        pieceText.setAttribute("fill", piece === piece.toUpperCase() ? "#ffffff" : "#000000");
+                        pieceText.textContent = PIECE_UNICODE[piece] || piece;
+                        svg.appendChild(pieceText);
+                    }
+
+                    // 绘制激活值（如果有）
+                    const actualRow = isFlipped ? (7 - row) : row;
+                    const actualCol = isFlipped ? (7 - col) : col;
+                    const activationIndex = actualRow * 8 + actualCol;
+                    const activation = currentActivations[activationIndex] || 0;
+
+                    if (activation !== 0 && currentMode === 'analysis') {
+                        // 如果在最右边列，激活值显示在左上角
+                        const centerX = col === 7 ? col * squareSize + 8 : col * squareSize + 32;
+
+                        // 创建背景圆圈
+                        const circle = document.createElementNS(svgNS, "circle");
+                        circle.setAttribute("cx", centerX.toString());
+                        circle.setAttribute("cy", (row * squareSize + 8).toString());
+                        circle.setAttribute("r", "6");
+                        circle.setAttribute("fill", "rgba(220, 53, 69, 0.9)");
+                        svg.appendChild(circle);
+
+                        // 创建激活值文本
+                        const text = document.createElementNS(svgNS, "text");
+                        text.setAttribute("x", centerX.toString());
+                        text.setAttribute("y", (row * squareSize + 11).toString());
+                        text.setAttribute("font-size", "6");
+                        text.setAttribute("font-weight", "bold");
+                        text.setAttribute("fill", "white");
+                        text.setAttribute("font-family", "Arial, sans-serif");
+                        text.setAttribute("text-anchor", "middle");
+                        text.textContent = Math.abs(activation).toFixed(2);
+                        svg.appendChild(text);
+                    }
+                }
+            }
+
+            // 绘制箭头
+            if (arrows.length > 0) {
+                const defs = document.createElementNS(svgNS, "defs");
+                svg.appendChild(defs);
+
+                arrows.forEach((arrow) => {
+                    // 创建箭头标记
+                    const markerSize = arrow.markerSize || 12;
+                    const arrowTipX = markerSize * 0.8;
+                    const centerY = markerSize / 2;
+                    const topY = 0;
+                    const bottomY = markerSize;
+                    
+                    // 计算箭头三角形的几何中心（重心）
+                    // 三角形顶点：(0,0), (0,markerSize), (arrowTipX, centerY)
+                    // 重心 = ((x1+x2+x3)/3, (y1+y2+y3)/3)
+                    const centroidX = arrowTipX / 3;
+                    const centroidY = markerSize / 2;
+                    
+                    const marker = document.createElementNS(svgNS, "marker");
+                    marker.setAttribute("id", `export-arrow-marker-${arrow.id}`);
+                    marker.setAttribute("markerWidth", markerSize.toString());
+                    marker.setAttribute("markerHeight", markerSize.toString());
+                    marker.setAttribute("refX", "0"); // 设置为0，使箭头底部对齐到线条终点
+                    marker.setAttribute("refY", centroidY.toString()); // refY在marker中心，使箭头几何中心与格子中心等高
+                    marker.setAttribute("orient", "auto");
+                    marker.setAttribute("markerUnits", "userSpaceOnUse"); // 使箭头大小独立于线宽
+                    const path = document.createElementNS(svgNS, "path");
+                    // 箭头路径：从底部开始
+                    path.setAttribute("d", `M0,${topY} L0,${bottomY} L${arrowTipX},${centerY} z`);
+                    path.setAttribute("fill", arrow.color);
+                    path.setAttribute("fill-opacity", arrow.opacity.toString()); // 设置箭头透明度
+                    marker.appendChild(path);
+                    defs.appendChild(marker);
+
+                    const from = parseSquareNotation(arrow.from);
+                    const to = parseSquareNotation(arrow.to);
+                    if (!from || !to) return;
+
+                    const displayFromRow = isFlipped ? (7 - from.row) : from.row;
+                    const displayFromCol = isFlipped ? (7 - from.col) : from.col;
+                    const displayToRow = isFlipped ? (7 - to.row) : to.row;
+                    const displayToCol = isFlipped ? (7 - to.col) : to.col;
+
+                    const x1 = displayFromCol * squareSize + squareSize / 2;
+                    const y1 = displayFromRow * squareSize + squareSize / 2;
+                    const targetX = displayToCol * squareSize + squareSize / 2;
+                    const targetY = displayToRow * squareSize + squareSize / 2;
+                    
+                    // 计算从起点到终点的方向和距离
+                    const dx = targetX - x1;
+                    const dy = targetY - y1;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    // 计算单位向量
+                    const unitX = dx / distance;
+                    const unitY = dy / distance;
+                    
+                    // 缩短线条，使箭头底部对齐到目标格子
+                    // 由于refX=0，箭头底部会在线条终点
+                    // 要让箭头几何中心在目标格子的下1/3处，需要计算：
+                    // - 格子下1/3处 = targetY + squareSize/6 (从格子中心向下移动squareSize/6)
+                    // - 箭头几何中心在箭头底部上方centroidX的位置（沿箭头方向）
+                    // - 所以箭头底部应该在 (targetX, targetY + squareSize/6) - centroidX * (unitX, unitY)
+                    const targetCenterY = targetY + squareSize / 6; // 格子下1/3处
+                    // 箭头底部位置：让箭头几何中心在 (targetX, targetCenterY)
+                    // 箭头几何中心在箭头底部上方centroidX的位置（沿箭头方向）
+                    // 如果箭头右侧对齐到了格子中心，说明箭头中心偏右了
+                    // 箭头最右侧在箭头方向上的距离是arrowTipX，箭头中心在箭头底部上方centroidX
+                    // 箭头右侧相对于箭头中心的偏移是 (arrowTipX - centroidX)
+                    // 要让箭头中心在targetX，需要补偿这个偏移
+                    const offsetFromCenterToRight = arrowTipX - centroidX; // 箭头中心到箭头右侧的距离
+                    const x2 = targetX - unitX * centroidX - unitX * offsetFromCenterToRight;
+                    const y2 = targetCenterY - unitY * centroidX - unitY * offsetFromCenterToRight;
+
+                    const line = document.createElementNS(svgNS, "line");
+                    line.setAttribute("x1", x1);
+                    line.setAttribute("y1", y1);
+                    line.setAttribute("x2", x2);
+                    line.setAttribute("y2", y2);
+                    line.setAttribute("stroke", arrow.color);
+                    line.setAttribute("stroke-width", arrow.width);
+                    line.setAttribute("stroke-opacity", arrow.opacity);
+                    line.setAttribute("marker-end", `url(#export-arrow-marker-${arrow.id})`);
+                    svg.appendChild(line);
+                });
+            }
+
+            // 转换为字符串并下载
+            const serializer = new XMLSerializer();
+            const svgString = serializer.serializeToString(svg);
+            const blob = new Blob([svgString], { type: "image/svg+xml" });
+            const url = URL.createObjectURL(blob);
+
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = "chessboard.svg";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        // 调试函数：检查坐标显示
+        function debugCoordinates() {
+            const coords = document.querySelectorAll('.coord');
+            console.log('坐标数量:', coords.length);
+            coords.forEach((coord, index) => {
+                console.log(`坐标 ${index}: "${coord.textContent}" - 显示: ${coord.style.display} - 类: ${coord.className}`);
+            });
+        }
+
+        function attachArrowModeClickHandlers() {
+            const squares = document.querySelectorAll('#chessboard .board-square');
+            
+            squares.forEach((square) => {
+                if (square._arrowClickHandler) {
+                    square.removeEventListener('click', square._arrowClickHandler);
+                    square._arrowClickHandler = null;
+                }
+            });
+
+            if (!window.arrowMode) {
+                squares.forEach((square) => {
+                    square.style.cursor = '';
+                    if (!square.classList.contains('marked-activation') && !square.classList.contains('marked-zpattern')) {
+                        square.style.boxShadow = '';
+                    }
+                });
+                return;
+            }
+
+            squares.forEach((square, displayIdx) => {
+                const displayRow = Math.floor(displayIdx / 8);
+                const displayCol = displayIdx % 8;
+                const actualRow = isFlipped ? (7 - displayRow) : displayRow;
+                const actualCol = isFlipped ? (7 - displayCol) : displayCol;
+                const squareIndex = actualRow * 8 + actualCol;
+
+                square._arrowClickHandler = function(e) {
+                    if (window.arrowMode && (!isActivationMarkingMode && !isZPatternMarkingMode)) {
+                        e.stopPropagation();
+                        handleArrowSquareClick(squareIndex);
+                    }
+                };
+                
+                square.addEventListener('click', square._arrowClickHandler);
+
+                if (!isActivationMarkingMode && !isZPatternMarkingMode) {
+                    square.style.cursor = 'pointer';
+                    
+                    if (selectedArrowFromSquare && selectedArrowFromSquare.index === squareIndex) {
+                        square.style.boxShadow = 'inset 0 0 0 3px #3b82f6';
+                    } else if (!square.classList.contains('marked-activation') && !square.classList.contains('marked-zpattern')) {
+                        square.style.boxShadow = '';
+                    }
+                }
+            });
+        }
+
+        // 分析模式相关变量和函数
+        window.analysisMode = false;
+        let selectedFromSquare = null;
+        let analysisArrows = [];
+
+        function handleSquareClick(squareIndex) {
+            if (!window.analysisMode) return;
+
+            const row = Math.floor(squareIndex / 8);
+            const col = squareIndex % 8;
+            const squareName = String.fromCharCode(97 + col) + (8 - row);
+
+            if (selectedFromSquare === null) {
+                selectedFromSquare = { index: squareIndex, name: squareName };
+            } else {
+                if (selectedFromSquare.index === squareIndex) {
+                    selectedFromSquare = null;
+                } else {
+                    const newArrow = {
+                        id: Date.now(),
+                        from: selectedFromSquare.name,
+                        to: squareName,
+                        color: '#7fa650',
+                        width: 4,
+                        markerSize: 10,
+                        opacity: 0.7
+                    };
+                    analysisArrows.push(newArrow);
+                    selectedFromSquare = null;
+                }
+            }
+            
+            renderBoard();
+            renderAnalysisArrows();
+        }
+
+        function attachAnalysisModeClickHandlers() {
+            const squares = document.querySelectorAll('#chessboard .board-square');
+            
+            squares.forEach((square) => {
+                if (square._analysisClickHandler) {
+                    square.removeEventListener('click', square._analysisClickHandler);
+                    square._analysisClickHandler = null;
+                }
+            });
+
+            if (!window.analysisMode) {
+                squares.forEach((square) => {
+                    if (!square.classList.contains('marked-activation') && !square.classList.contains('marked-zpattern')) {
+                        square.style.boxShadow = '';
+                    }
+                });
+                return;
+            }
+
+            squares.forEach((square, displayIdx) => {
+                const displayRow = Math.floor(displayIdx / 8);
+                const displayCol = displayIdx % 8;
+                const actualRow = isFlipped ? (7 - displayRow) : displayRow;
+                const actualCol = isFlipped ? (7 - displayCol) : displayCol;
+                const squareIndex = actualRow * 8 + actualCol;
+
+                square._analysisClickHandler = function(e) {
+                    if (window.analysisMode && (!isActivationMarkingMode && !isZPatternMarkingMode)) {
+                        e.stopPropagation();
+                        handleSquareClick(squareIndex);
+                    }
+                };
+                
+                square.addEventListener('click', square._analysisClickHandler);
+
+                if (!isActivationMarkingMode && !isZPatternMarkingMode) {
+                    square.style.cursor = 'pointer';
+                    
+                    if (selectedFromSquare && selectedFromSquare.index === squareIndex) {
+                        square.style.boxShadow = 'inset 0 0 0 3px #3b82f6';
+                    } else if (!square.classList.contains('marked-activation') && !square.classList.contains('marked-zpattern')) {
+                        square.style.boxShadow = '';
+                    }
+                }
+            });
+        }
+
+        function renderAnalysisArrows() {
+            const svgLayer = document.getElementById('arrows-layer');
+            if (!svgLayer) return;
+
+            let defs = svgLayer.querySelector('defs');
+            if (!defs) {
+                defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+                svgLayer.appendChild(defs);
+            }
+
+            // 清除旧的分析箭头标记和箭头
+            const existingMarkers = defs.querySelectorAll('[id^="analysis-arrow-marker-"]');
+            existingMarkers.forEach(marker => marker.remove());
+            const existingArrows = svgLayer.querySelectorAll('.analysis-arrow');
+            existingArrows.forEach(arrow => arrow.remove());
+
+            // 为每个分析箭头创建唯一的标记
+            analysisArrows.forEach((arrow, idx) => {
+                const markerSize = arrow.markerSize || 10;
+                const arrowTipX = markerSize * 0.8;
+                const centerY = markerSize / 2;
+                const topY = 0;
+                const bottomY = markerSize;
+                
+                // 计算箭头三角形的几何中心（重心）
+                // 三角形顶点：(0,0), (0,markerSize), (arrowTipX, centerY)
+                // 重心 = ((x1+x2+x3)/3, (y1+y2+y3)/3)
+                const centroidX = arrowTipX / 3;
+                const centroidY = markerSize / 2;
+                
+                const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+                marker.setAttribute('id', `analysis-arrow-marker-${arrow.id}`);
+                marker.setAttribute('markerWidth', markerSize.toString());
+                marker.setAttribute('markerHeight', markerSize.toString());
+                marker.setAttribute('refX', '0'); // 设置为0，使箭头底部对齐到线条终点
+                marker.setAttribute('refY', centroidY.toString()); // refY在marker中心，使箭头几何中心与格子中心等高
+                marker.setAttribute('orient', 'auto');
+                marker.setAttribute('markerUnits', 'userSpaceOnUse'); // 使箭头大小独立于线宽
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                // 箭头路径：从底部开始
+                path.setAttribute('d', `M0,${topY} L0,${bottomY} L${arrowTipX},${centerY} z`);
+                path.setAttribute('fill', arrow.color);
+                path.setAttribute('fill-opacity', arrow.opacity.toString()); // 设置箭头透明度
+                marker.appendChild(path);
+                defs.appendChild(marker);
+
+                const from = parseSquareNotation(arrow.from);
+                const to = parseSquareNotation(arrow.to);
+                if (!from || !to) return;
+
+                const displayFromRow = isFlipped ? (7 - from.row) : from.row;
+                const displayFromCol = isFlipped ? (7 - from.col) : from.col;
+                const displayToRow = isFlipped ? (7 - to.row) : to.row;
+                const displayToCol = isFlipped ? (7 - to.col) : to.col;
+
+                const squareSize = 48;
+                const x1 = displayFromCol * squareSize + squareSize / 2;
+                const y1 = displayFromRow * squareSize + squareSize / 2;
+                const targetX = displayToCol * squareSize + squareSize / 2;
+                const targetY = displayToRow * squareSize + squareSize / 2;
+                
+                // 计算从起点到终点的方向和距离
+                const dx = targetX - x1;
+                const dy = targetY - y1;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                // 计算单位向量
+                const unitX = dx / distance;
+                const unitY = dy / distance;
+                
+                // 缩短线条，使箭头底部对齐到目标格子
+                // 由于refX=0，箭头底部会在线条终点
+                // 要让箭头几何中心在目标格子的下1/3处且水平居中，需要计算：
+                // - 格子下1/3处 = targetY + squareSize/6 (从格子中心向下移动squareSize/6)
+                // - 箭头几何中心在箭头底部上方centroidX的位置（沿箭头方向）
+                // - 所以箭头底部应该在 (targetX, targetY + squareSize/6) - centroidX * (unitX, unitY)
+                const targetCenterY = targetY + squareSize / 6; // 格子下1/3处
+                // 箭头底部位置：让箭头几何中心在 (targetX, targetCenterY)
+                // 箭头几何中心在箭头底部上方centroidX的位置（沿箭头方向）
+                // 如果箭头右侧对齐到了格子中心，说明箭头中心偏右了
+                // 箭头最右侧在箭头方向上的距离是arrowTipX，箭头中心在箭头底部上方centroidX
+                // 箭头右侧相对于箭头中心的偏移是 (arrowTipX - centroidX)
+                // 要让箭头中心在targetX，需要补偿这个偏移
+                const offsetFromCenterToRight = arrowTipX - centroidX; // 箭头中心到箭头右侧的距离
+                const x2 = targetX - unitX * centroidX - unitX * offsetFromCenterToRight;
+                const y2 = targetCenterY - unitY * centroidX - unitY * offsetFromCenterToRight;
+
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('class', 'analysis-arrow');
+                line.setAttribute('x1', x1);
+                line.setAttribute('y1', y1);
+                line.setAttribute('x2', x2);
+                line.setAttribute('y2', y2);
+                line.setAttribute('stroke', arrow.color);
+                line.setAttribute('stroke-width', arrow.width);
+                line.setAttribute('stroke-opacity', arrow.opacity);
+                line.setAttribute('marker-end', `url(#analysis-arrow-marker-${arrow.id})`);
+                svgLayer.appendChild(line);
+            });
+        }
+
+        const originalRenderBoard = window.renderBoard;
+        window.renderBoard = function() {
+            if (typeof renderBoard === 'function' && renderBoard !== window.renderBoard) {
+                renderBoard();
+            } else if (originalRenderBoard) {
+                originalRenderBoard();
+            }
+            setTimeout(() => {
+                attachArrowModeClickHandlers();
+                attachAnalysisModeClickHandlers();
+                renderAnalysisArrows();
+                renderArrows();
+            }, 10);
+        };
+
+        document.addEventListener('DOMContentLoaded', function() {
+            updateBoard();
+            setTimeout(() => {
+                debugCoordinates();
+                attachArrowModeClickHandlers();
+                attachAnalysisModeClickHandlers();
+                renderAnalysisArrows();
+                renderArrows();
+            }, 1000);
+        });
+    </script>
+</body>
+</html>

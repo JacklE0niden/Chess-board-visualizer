@@ -180,16 +180,16 @@
             user-select: none;
             pointer-events: none;
             z-index: 15; /* 提高z-index，确保在最上层 */
-            opacity: 0.9; /* 提高透明度 */
+            opacity: 1; /* 提高对比度 */
             display: block !important; /* 强制显示 */
         }
 
         .coord.dark {
-            color: #F0F0F0; /* 浅色文字用于深色格子 */
+            color: #FFFFFF; /* 更亮：用于深色格子 */
         }
 
         .coord.light {
-            color: #D1D1D1; /* 深色文字用于浅色格子 */
+            color: #8A8A8A; /* 更暗：用于浅色格子 */
         }
 
         .coord.rank {
@@ -924,11 +924,82 @@
             markedZPatterns.clear();
             updateMarkingStatus();
             renderBoard();
+            // 同时清除箭头（用户期望 Clear Marks 能把画面清空）
+            if (typeof clearAllArrows === 'function') clearAllArrows();
+            try {
+                if (typeof analysisArrows !== 'undefined') {
+                    analysisArrows = [];
+                    selectedFromSquare = null;
+                    renderAnalysisArrows();
+                }
+            } catch (e) {
+                // ignore
+            }
         }
 
         window.arrowMode = false;
         let arrows = [];
         let selectedArrowFromSquare = null;
+
+        // ==================== Arrow shape helpers (website.ipynb-like) ====================
+        // Render a SINGLE filled arrow shape (shaft + head) driven by one "size" parameter.
+        // This matches the website.ipynb vibe: filled triangle head, unified scaling, semi-transparent dark color.
+        function getArrowSize(arrow, fallback = 18) {
+            // Back-compat: old arrows had width + markerSize. Map them to a single size.
+            if (typeof arrow.size === 'number' && !isNaN(arrow.size)) return arrow.size;
+            if (typeof arrow.markerSize === 'number' && !isNaN(arrow.markerSize)) return Math.round(arrow.markerSize * 0.85);
+            if (typeof arrow.width === 'number' && !isNaN(arrow.width)) return Math.round(arrow.width * 2);
+            return fallback;
+        }
+
+        function clamp(n, lo, hi) {
+            return Math.max(lo, Math.min(hi, n));
+        }
+
+        // Returns SVG path data for a closed polygon representing an arrow.
+        function buildArrowPathD(x1, y1, x2, y2, size) {
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (!dist) return null;
+
+            const ux = dx / dist;
+            const uy = dy / dist;
+            const px = -uy;
+            const py = ux;
+
+            const s = clamp(size, 6, 40);
+            const shaftW = s * 0.38;
+            let headLen = s * 1.15;
+            let headW = s * 0.95;
+
+            // Prevent weird geometry if the two squares are very close
+            headLen = Math.min(headLen, dist * 0.6);
+            headW = Math.min(headW, dist * 0.8);
+
+            const halfShaft = shaftW / 2;
+            const halfHead = headW / 2;
+
+            const baseX = x2 - ux * headLen;
+            const baseY = y2 - uy * headLen;
+
+            const p1x = x1 + px * halfShaft;
+            const p1y = y1 + py * halfShaft;
+            const p2x = baseX + px * halfShaft;
+            const p2y = baseY + py * halfShaft;
+            const p3x = baseX + px * halfHead;
+            const p3y = baseY + py * halfHead;
+            const p4x = x2;
+            const p4y = y2;
+            const p5x = baseX - px * halfHead;
+            const p5y = baseY - py * halfHead;
+            const p6x = baseX - px * halfShaft;
+            const p6y = baseY - py * halfShaft;
+            const p7x = x1 - px * halfShaft;
+            const p7y = y1 - py * halfShaft;
+
+            return `M ${p1x} ${p1y} L ${p2x} ${p2y} L ${p3x} ${p3y} L ${p4x} ${p4y} L ${p5x} ${p5y} L ${p6x} ${p6y} L ${p7x} ${p7y} Z`;
+        }
 
         function toggleArrowMode() {
             window.arrowMode = !window.arrowMode;
@@ -964,10 +1035,11 @@
                         id: Date.now(),
                         from: selectedArrowFromSquare.name,
                         to: squareName,
-                        color: '#3b82f6',
-                        width: 6,
-                        markerSize: 12,
-                        opacity: 0.9
+                        // 参考 website.ipynb: #2d3436 + 0x80 透明度（约 0.5）
+                        color: '#2d3436',
+                        // Unified size (one knob controls the whole arrow)
+                        size: 18,
+                        opacity: 0.5
                     };
                     arrows.push(newArrow);
                     selectedArrowFromSquare = null;
@@ -1007,18 +1079,11 @@
                                    class="flex-1 px-2 py-1 bg-gray-800 border border-gray-600 rounded text-white focus:outline-none focus:border-green-500" />
                         </div>
                         <div class="flex items-center space-x-2">
-                            <label class="text-gray-400 w-16">Line Width:</label>
-                            <input type="range" min="1" max="20" step="1" value="${arrow.width || 6}" 
-                                   oninput="updateArrowWidth(${idx}, parseInt(this.value) || 6); document.getElementById('arrow-width-display-${idx}').textContent = this.value"
+                            <label class="text-gray-400 w-16">Size:</label>
+                            <input type="range" min="8" max="30" step="1" value="${getArrowSize(arrow)}" 
+                                   oninput="updateArrowSize(${idx}, parseInt(this.value) || 18); document.getElementById('arrow-size-display-${idx}').textContent = this.value"
                                    class="flex-1" />
-                            <span id="arrow-width-display-${idx}" class="text-gray-400 w-8 text-right">${arrow.width || 6}</span>
-                        </div>
-                        <div class="flex items-center space-x-2">
-                            <label class="text-gray-400 w-16">Arrow Size:</label>
-                            <input type="range" min="4" max="30" step="1" value="${arrow.markerSize || 12}" 
-                                   oninput="updateArrowMarkerSize(${idx}, parseInt(this.value) || 12); document.getElementById('arrow-marker-size-display-${idx}').textContent = this.value"
-                                   class="flex-1" />
-                            <span id="arrow-marker-size-display-${idx}" class="text-gray-400 w-8 text-right">${arrow.markerSize || 12}</span>
+                            <span id="arrow-size-display-${idx}" class="text-gray-400 w-8 text-right">${getArrowSize(arrow)}</span>
                         </div>
                         <div class="flex items-center space-x-2">
                             <label class="text-gray-400 w-16">Color:</label>
@@ -1058,9 +1123,10 @@
             }
         }
 
-        function updateArrowWidth(index, width) {
+        function updateArrowSize(index, size) {
             if (arrows[index]) {
-                arrows[index].width = Math.max(1, Math.min(20, width));
+                arrows[index].size = Math.max(8, Math.min(30, size));
+                updateArrowsPanel();
                 renderArrows();
             }
         }
@@ -1073,11 +1139,12 @@
             }
         }
 
+        // Back-compat (old UI had separate controls)
+        function updateArrowWidth(index, width) {
+            if (arrows[index]) updateArrowSize(index, Math.round((width || 6) * 2));
+        }
         function updateArrowMarkerSize(index, markerSize) {
-            if (arrows[index]) {
-                arrows[index].markerSize = Math.max(4, Math.min(30, markerSize));
-                renderArrows();
-            }
+            if (arrows[index]) updateArrowSize(index, Math.round((markerSize || 12) * 0.85));
         }
 
         function deleteArrow(index) {
@@ -1104,41 +1171,15 @@
             }
 
             // 清除旧的箭头标记和箭头
-            const existingMarkers = defs.querySelectorAll('[id^="custom-arrow-marker-"]');
+            const existingMarkers = defs.querySelectorAll('[id^="custom-arrow-head-"]');
             existingMarkers.forEach(marker => marker.remove());
             const existingArrows = svgLayer.querySelectorAll('.custom-arrow');
             existingArrows.forEach(arrow => arrow.remove());
+            const existingHeads = svgLayer.querySelectorAll('.custom-arrow-head');
+            existingHeads.forEach(head => head.remove());
 
-            // 为每个箭头创建唯一的标记
-            arrows.forEach((arrow, idx) => {
-                const markerSize = arrow.markerSize || 12;
-                const arrowTipX = markerSize * 0.8;
-                const centerY = markerSize / 2;
-                const topY = 0;
-                const bottomY = markerSize;
-                
-                // 计算箭头三角形的几何中心（重心）
-                // 三角形顶点：(0,0), (0,markerSize), (arrowTipX, centerY)
-                // 重心 = ((x1+x2+x3)/3, (y1+y2+y3)/3)
-                const centroidX = arrowTipX / 3;
-                const centroidY = markerSize / 2;
-                
-                const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
-                marker.setAttribute('id', `custom-arrow-marker-${arrow.id}`);
-                marker.setAttribute('markerWidth', markerSize.toString());
-                marker.setAttribute('markerHeight', markerSize.toString());
-                marker.setAttribute('refX', '0'); // 设置为0，使箭头底部对齐到线条终点
-                marker.setAttribute('refY', centroidY.toString()); // refY在marker中心，使箭头几何中心与格子中心等高
-                marker.setAttribute('orient', 'auto');
-                marker.setAttribute('markerUnits', 'userSpaceOnUse'); // 使箭头大小独立于线宽
-                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                // 箭头路径：从底部开始
-                path.setAttribute('d', `M0,${topY} L0,${bottomY} L${arrowTipX},${centerY} z`);
-                path.setAttribute('fill', arrow.color);
-                path.setAttribute('fill-opacity', arrow.opacity.toString()); // 设置箭头透明度
-                marker.appendChild(path);
-                defs.appendChild(marker);
-
+            // 为每个箭头绘制：单一的“完整箭头形状”（shaft+head in one path），统一由 size 控制
+            arrows.forEach((arrow) => {
                 const from = parseSquareNotation(arrow.from);
                 const to = parseSquareNotation(arrow.to);
                 if (!from || !to) return;
@@ -1151,46 +1192,28 @@
                 const squareSize = 48;
                 const x1 = displayFromCol * squareSize + squareSize / 2;
                 const y1 = displayFromRow * squareSize + squareSize / 2;
-                const targetX = displayToCol * squareSize + squareSize / 2;
-                const targetY = displayToRow * squareSize + squareSize / 2;
-                
-                // 计算从起点到终点的方向和距离
-                const dx = targetX - x1;
-                const dy = targetY - y1;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                
-                // 计算单位向量
-                const unitX = dx / distance;
-                const unitY = dy / distance;
-                
-                // 缩短线条，使箭头底部对齐到目标格子
-                // 由于refX=0，箭头底部会在线条终点
-                // 要让箭头几何中心在目标格子的下1/3处且水平居中，需要计算：
-                // - 格子下1/3处 = targetY + squareSize/6 (从格子中心向下移动squareSize/6)
-                // - 箭头几何中心在箭头底部上方centroidX的位置（沿箭头方向）
-                // - 所以箭头底部应该在 (targetX, targetY + squareSize/6) - centroidX * (unitX, unitY)
-                const targetCenterY = targetY + squareSize / 6; // 格子下1/3处
-                // 箭头底部位置：让箭头几何中心在 (targetX, targetCenterY)
-                // 箭头几何中心在箭头底部上方centroidX的位置（沿箭头方向）
-                // 如果箭头右侧对齐到了格子中心，说明箭头中心偏右了
-                // 箭头最右侧在箭头方向上的距离是arrowTipX，箭头中心在箭头底部上方centroidX
-                // 箭头右侧相对于箭头中心的偏移是 (arrowTipX - centroidX)
-                // 要让箭头中心在targetX，需要补偿这个偏移
-                const offsetFromCenterToRight = arrowTipX - centroidX; // 箭头中心到箭头右侧的距离
-                const x2 = targetX - unitX * centroidX - unitX * offsetFromCenterToRight;
-                const y2 = targetCenterY - unitY * centroidX - unitY * offsetFromCenterToRight;
+                const x2 = displayToCol * squareSize + squareSize / 2;
+                const y2 = displayToRow * squareSize + squareSize / 2;
 
-                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                line.setAttribute('class', 'custom-arrow');
-                line.setAttribute('x1', x1);
-                line.setAttribute('y1', y1);
-                line.setAttribute('x2', x2);
-                line.setAttribute('y2', y2);
-                line.setAttribute('stroke', arrow.color);
-                line.setAttribute('stroke-width', arrow.width);
-                line.setAttribute('stroke-opacity', arrow.opacity);
-                line.setAttribute('marker-end', `url(#custom-arrow-marker-${arrow.id})`);
-                svgLayer.appendChild(line);
+                const size = getArrowSize(arrow);
+                const d = buildArrowPathD(x1, y1, x2, y2, size);
+                if (!d) return;
+
+                // Shadow (same shape, slight offset)
+                const shadow = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                shadow.setAttribute('class', 'custom-arrow');
+                shadow.setAttribute('d', d);
+                shadow.setAttribute('fill', '#000000');
+                shadow.setAttribute('fill-opacity', Math.min((arrow.opacity ?? 0.5) * 0.20, 0.20));
+                shadow.setAttribute('transform', 'translate(1 1)');
+                svgLayer.appendChild(shadow);
+
+                const shape = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                shape.setAttribute('class', 'custom-arrow');
+                shape.setAttribute('d', d);
+                shape.setAttribute('fill', arrow.color);
+                shape.setAttribute('fill-opacity', (arrow.opacity ?? 0.5).toString());
+                svgLayer.appendChild(shape);
             });
         }
 
@@ -1311,7 +1334,7 @@
                     rankText.setAttribute("font-weight", "bold");
                     // 根据格子颜色决定文字颜色（考虑翻转）
                     const isLightSquare = isFlipped ? (row + 7) % 2 !== 0 : (row + 7) % 2 === 0; // col=7
-                    rankText.setAttribute("fill", isLightSquare ? "#D1D1D1" : "#F0F0F0");
+                    rankText.setAttribute("fill", isLightSquare ? "#8A8A8A" : "#FFFFFF");
                     rankText.setAttribute("font-family", "Arial, sans-serif");
                     rankText.setAttribute("text-anchor", "start");
                     rankText.setAttribute("dominant-baseline", "hanging");
@@ -1330,7 +1353,7 @@
                     fileText.setAttribute("font-weight", "bold");
                     // 根据格子颜色决定文字颜色（考虑翻转）
                     const isLightSquare = isFlipped ? (7 + col) % 2 === 0 : (7 + col) % 2 !== 0; // row=7
-                    fileText.setAttribute("fill", isLightSquare ? "#D1D1D1" : "#F0F0F0");
+                    fileText.setAttribute("fill", isLightSquare ? "#8A8A8A" : "#FFFFFF");
                     fileText.setAttribute("font-family", "Arial, sans-serif");
                     fileText.setAttribute("text-anchor", "start");
                     fileText.setAttribute("dominant-baseline", "auto");
@@ -1401,35 +1424,6 @@
                 svg.appendChild(defs);
 
                 arrows.forEach((arrow) => {
-                    // 创建箭头标记
-                    const markerSize = arrow.markerSize || 12;
-                    const arrowTipX = markerSize * 0.8;
-                    const centerY = markerSize / 2;
-                    const topY = 0;
-                    const bottomY = markerSize;
-                    
-                    // 计算箭头三角形的几何中心（重心）
-                    // 三角形顶点：(0,0), (0,markerSize), (arrowTipX, centerY)
-                    // 重心 = ((x1+x2+x3)/3, (y1+y2+y3)/3)
-                    const centroidX = arrowTipX / 3;
-                    const centroidY = markerSize / 2;
-                    
-                    const marker = document.createElementNS(svgNS, "marker");
-                    marker.setAttribute("id", `export-arrow-marker-${arrow.id}`);
-                    marker.setAttribute("markerWidth", markerSize.toString());
-                    marker.setAttribute("markerHeight", markerSize.toString());
-                    marker.setAttribute("refX", "0"); // 设置为0，使箭头底部对齐到线条终点
-                    marker.setAttribute("refY", centroidY.toString()); // refY在marker中心，使箭头几何中心与格子中心等高
-                    marker.setAttribute("orient", "auto");
-                    marker.setAttribute("markerUnits", "userSpaceOnUse"); // 使箭头大小独立于线宽
-                    const path = document.createElementNS(svgNS, "path");
-                    // 箭头路径：从底部开始
-                    path.setAttribute("d", `M0,${topY} L0,${bottomY} L${arrowTipX},${centerY} z`);
-                    path.setAttribute("fill", arrow.color);
-                    path.setAttribute("fill-opacity", arrow.opacity.toString()); // 设置箭头透明度
-                    marker.appendChild(path);
-                    defs.appendChild(marker);
-
                     const from = parseSquareNotation(arrow.from);
                     const to = parseSquareNotation(arrow.to);
                     if (!from || !to) return;
@@ -1441,45 +1435,25 @@
 
                     const x1 = displayFromCol * squareSize + squareSize / 2;
                     const y1 = displayFromRow * squareSize + squareSize / 2;
-                    const targetX = displayToCol * squareSize + squareSize / 2;
-                    const targetY = displayToRow * squareSize + squareSize / 2;
-                    
-                    // 计算从起点到终点的方向和距离
-                    const dx = targetX - x1;
-                    const dy = targetY - y1;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-                    
-                    // 计算单位向量
-                    const unitX = dx / distance;
-                    const unitY = dy / distance;
-                    
-                    // 缩短线条，使箭头底部对齐到目标格子
-                    // 由于refX=0，箭头底部会在线条终点
-                    // 要让箭头几何中心在目标格子的下1/3处，需要计算：
-                    // - 格子下1/3处 = targetY + squareSize/6 (从格子中心向下移动squareSize/6)
-                    // - 箭头几何中心在箭头底部上方centroidX的位置（沿箭头方向）
-                    // - 所以箭头底部应该在 (targetX, targetY + squareSize/6) - centroidX * (unitX, unitY)
-                    const targetCenterY = targetY + squareSize / 6; // 格子下1/3处
-                    // 箭头底部位置：让箭头几何中心在 (targetX, targetCenterY)
-                    // 箭头几何中心在箭头底部上方centroidX的位置（沿箭头方向）
-                    // 如果箭头右侧对齐到了格子中心，说明箭头中心偏右了
-                    // 箭头最右侧在箭头方向上的距离是arrowTipX，箭头中心在箭头底部上方centroidX
-                    // 箭头右侧相对于箭头中心的偏移是 (arrowTipX - centroidX)
-                    // 要让箭头中心在targetX，需要补偿这个偏移
-                    const offsetFromCenterToRight = arrowTipX - centroidX; // 箭头中心到箭头右侧的距离
-                    const x2 = targetX - unitX * centroidX - unitX * offsetFromCenterToRight;
-                    const y2 = targetCenterY - unitY * centroidX - unitY * offsetFromCenterToRight;
+                    const x2 = displayToCol * squareSize + squareSize / 2;
+                    const y2 = displayToRow * squareSize + squareSize / 2;
 
-                    const line = document.createElementNS(svgNS, "line");
-                    line.setAttribute("x1", x1);
-                    line.setAttribute("y1", y1);
-                    line.setAttribute("x2", x2);
-                    line.setAttribute("y2", y2);
-                    line.setAttribute("stroke", arrow.color);
-                    line.setAttribute("stroke-width", arrow.width);
-                    line.setAttribute("stroke-opacity", arrow.opacity);
-                    line.setAttribute("marker-end", `url(#export-arrow-marker-${arrow.id})`);
-                    svg.appendChild(line);
+                    const size = getArrowSize(arrow);
+                    const d = buildArrowPathD(x1, y1, x2, y2, size);
+                    if (!d) return;
+
+                    const shadow = document.createElementNS(svgNS, "path");
+                    shadow.setAttribute("d", d);
+                    shadow.setAttribute("fill", "#000000");
+                    shadow.setAttribute("fill-opacity", Math.min((arrow.opacity ?? 0.5) * 0.20, 0.20).toString());
+                    shadow.setAttribute("transform", "translate(1 1)");
+                    svg.appendChild(shadow);
+
+                    const shape = document.createElementNS(svgNS, "path");
+                    shape.setAttribute("d", d);
+                    shape.setAttribute("fill", arrow.color);
+                    shape.setAttribute("fill-opacity", (arrow.opacity ?? 0.5).toString());
+                    svg.appendChild(shape);
                 });
             }
 
@@ -1578,8 +1552,7 @@
                         from: selectedFromSquare.name,
                         to: squareName,
                         color: '#7fa650',
-                        width: 4,
-                        markerSize: 10,
+                        size: 12,
                         opacity: 0.7
                     };
                     analysisArrows.push(newArrow);
@@ -1649,41 +1622,15 @@
             }
 
             // 清除旧的分析箭头标记和箭头
-            const existingMarkers = defs.querySelectorAll('[id^="analysis-arrow-marker-"]');
+            const existingMarkers = defs.querySelectorAll('[id^="analysis-arrow-head-"]');
             existingMarkers.forEach(marker => marker.remove());
             const existingArrows = svgLayer.querySelectorAll('.analysis-arrow');
             existingArrows.forEach(arrow => arrow.remove());
+            const existingHeads = svgLayer.querySelectorAll('.analysis-arrow-head');
+            existingHeads.forEach(head => head.remove());
 
-            // 为每个分析箭头创建唯一的标记
-            analysisArrows.forEach((arrow, idx) => {
-                const markerSize = arrow.markerSize || 10;
-                const arrowTipX = markerSize * 0.8;
-                const centerY = markerSize / 2;
-                const topY = 0;
-                const bottomY = markerSize;
-                
-                // 计算箭头三角形的几何中心（重心）
-                // 三角形顶点：(0,0), (0,markerSize), (arrowTipX, centerY)
-                // 重心 = ((x1+x2+x3)/3, (y1+y2+y3)/3)
-                const centroidX = arrowTipX / 3;
-                const centroidY = markerSize / 2;
-                
-                const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
-                marker.setAttribute('id', `analysis-arrow-marker-${arrow.id}`);
-                marker.setAttribute('markerWidth', markerSize.toString());
-                marker.setAttribute('markerHeight', markerSize.toString());
-                marker.setAttribute('refX', '0'); // 设置为0，使箭头底部对齐到线条终点
-                marker.setAttribute('refY', centroidY.toString()); // refY在marker中心，使箭头几何中心与格子中心等高
-                marker.setAttribute('orient', 'auto');
-                marker.setAttribute('markerUnits', 'userSpaceOnUse'); // 使箭头大小独立于线宽
-                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                // 箭头路径：从底部开始
-                path.setAttribute('d', `M0,${topY} L0,${bottomY} L${arrowTipX},${centerY} z`);
-                path.setAttribute('fill', arrow.color);
-                path.setAttribute('fill-opacity', arrow.opacity.toString()); // 设置箭头透明度
-                marker.appendChild(path);
-                defs.appendChild(marker);
-
+            // 为每个分析箭头绘制：单一完整箭头形状（统一由 size 控制）
+            analysisArrows.forEach((arrow) => {
                 const from = parseSquareNotation(arrow.from);
                 const to = parseSquareNotation(arrow.to);
                 if (!from || !to) return;
@@ -1696,46 +1643,19 @@
                 const squareSize = 48;
                 const x1 = displayFromCol * squareSize + squareSize / 2;
                 const y1 = displayFromRow * squareSize + squareSize / 2;
-                const targetX = displayToCol * squareSize + squareSize / 2;
-                const targetY = displayToRow * squareSize + squareSize / 2;
-                
-                // 计算从起点到终点的方向和距离
-                const dx = targetX - x1;
-                const dy = targetY - y1;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                
-                // 计算单位向量
-                const unitX = dx / distance;
-                const unitY = dy / distance;
-                
-                // 缩短线条，使箭头底部对齐到目标格子
-                // 由于refX=0，箭头底部会在线条终点
-                // 要让箭头几何中心在目标格子的下1/3处且水平居中，需要计算：
-                // - 格子下1/3处 = targetY + squareSize/6 (从格子中心向下移动squareSize/6)
-                // - 箭头几何中心在箭头底部上方centroidX的位置（沿箭头方向）
-                // - 所以箭头底部应该在 (targetX, targetY + squareSize/6) - centroidX * (unitX, unitY)
-                const targetCenterY = targetY + squareSize / 6; // 格子下1/3处
-                // 箭头底部位置：让箭头几何中心在 (targetX, targetCenterY)
-                // 箭头几何中心在箭头底部上方centroidX的位置（沿箭头方向）
-                // 如果箭头右侧对齐到了格子中心，说明箭头中心偏右了
-                // 箭头最右侧在箭头方向上的距离是arrowTipX，箭头中心在箭头底部上方centroidX
-                // 箭头右侧相对于箭头中心的偏移是 (arrowTipX - centroidX)
-                // 要让箭头中心在targetX，需要补偿这个偏移
-                const offsetFromCenterToRight = arrowTipX - centroidX; // 箭头中心到箭头右侧的距离
-                const x2 = targetX - unitX * centroidX - unitX * offsetFromCenterToRight;
-                const y2 = targetCenterY - unitY * centroidX - unitY * offsetFromCenterToRight;
+                const x2 = displayToCol * squareSize + squareSize / 2;
+                const y2 = displayToRow * squareSize + squareSize / 2;
 
-                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                line.setAttribute('class', 'analysis-arrow');
-                line.setAttribute('x1', x1);
-                line.setAttribute('y1', y1);
-                line.setAttribute('x2', x2);
-                line.setAttribute('y2', y2);
-                line.setAttribute('stroke', arrow.color);
-                line.setAttribute('stroke-width', arrow.width);
-                line.setAttribute('stroke-opacity', arrow.opacity);
-                line.setAttribute('marker-end', `url(#analysis-arrow-marker-${arrow.id})`);
-                svgLayer.appendChild(line);
+                const size = getArrowSize(arrow, 12);
+                const d = buildArrowPathD(x1, y1, x2, y2, size);
+                if (!d) return;
+
+                const shape = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                shape.setAttribute('class', 'analysis-arrow');
+                shape.setAttribute('d', d);
+                shape.setAttribute('fill', arrow.color);
+                shape.setAttribute('fill-opacity', (arrow.opacity ?? 0.7).toString());
+                svgLayer.appendChild(shape);
             });
         }
 

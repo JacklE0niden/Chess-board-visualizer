@@ -153,6 +153,14 @@
             border-radius: 2px;
         }
 
+        .board-square.marked-correct-move {
+            background: rgba(127, 166, 80, 0.6) !important;
+            margin: 2px !important;
+            width: calc(3rem - 4px) !important;
+            height: calc(3rem - 4px) !important;
+            border-radius: 2px;
+        }
+
         .board-square.last-move {
             box-shadow: inset 0 0 0 3px var(--c-accent);
         }
@@ -492,7 +500,8 @@
             }
 
             .board-square.marked-activation,
-            .board-square.marked-zpattern {
+            .board-square.marked-zpattern,
+            .board-square.marked-correct-move {
                 width: calc(2.5rem - 4px) !important;
                 height: calc(2.5rem - 4px) !important;
             }
@@ -598,6 +607,9 @@
                 </button>
                 <button class="tool-button" onclick="toggleZPatternMarking()" id="zpattern-marking-btn">
                     <span>🔵</span> Mark Z-Pattern
+                </button>
+                <button class="tool-button" onclick="toggleCorrectMoveMarking()" id="correct-move-marking-btn">
+                    <span>✅</span> Mark Correct Move
                 </button>
                 <button class="tool-button" onclick="clearAllMarkings()">
                     <span>🧹</span> Clear Marks
@@ -875,6 +887,10 @@
                 statusDiv.style.display = 'block';
                 modeText.textContent = '🔵 Z模式标注模式';
                 countText.textContent = `${markedZPatterns.size} 个格子已标注`;
+            } else if (isCorrectMoveMarkingMode) {
+                statusDiv.style.display = 'block';
+                modeText.textContent = '✅ 正确move标注模式';
+                countText.textContent = `${markedCorrectMoves.size} 个格子已标注`;
             } else {
                 statusDiv.style.display = 'none';
             }
@@ -884,13 +900,16 @@
         function toggleActivationMarking() {
             isActivationMarkingMode = !isActivationMarkingMode;
             isZPatternMarkingMode = false; // 互斥
+            isCorrectMoveMarkingMode = false; // 互斥
 
             const activationBtn = document.getElementById('activation-marking-btn');
             const zpatternBtn = document.getElementById('zpattern-marking-btn');
+            const correctMoveBtn = document.getElementById('correct-move-marking-btn');
 
             if (isActivationMarkingMode) {
                 activationBtn.classList.add('active');
                 zpatternBtn.classList.remove('active');
+                if (correctMoveBtn) correctMoveBtn.classList.remove('active');
             } else {
                 activationBtn.classList.remove('active');
             }
@@ -903,15 +922,40 @@
         function toggleZPatternMarking() {
             isZPatternMarkingMode = !isZPatternMarkingMode;
             isActivationMarkingMode = false; // 互斥
+            isCorrectMoveMarkingMode = false; // 互斥
 
             const activationBtn = document.getElementById('activation-marking-btn');
             const zpatternBtn = document.getElementById('zpattern-marking-btn');
+            const correctMoveBtn = document.getElementById('correct-move-marking-btn');
 
             if (isZPatternMarkingMode) {
                 zpatternBtn.classList.add('active');
                 activationBtn.classList.remove('active');
+                if (correctMoveBtn) correctMoveBtn.classList.remove('active');
             } else {
                 zpatternBtn.classList.remove('active');
+            }
+
+            updateMarkingStatus();
+            renderBoard(); // 重新渲染以更新光标样式
+        }
+
+        // 切换正确move标注模式
+        function toggleCorrectMoveMarking() {
+            isCorrectMoveMarkingMode = !isCorrectMoveMarkingMode;
+            isActivationMarkingMode = false; // 互斥
+            isZPatternMarkingMode = false; // 互斥
+
+            const correctMoveBtn = document.getElementById('correct-move-marking-btn');
+            const activationBtn = document.getElementById('activation-marking-btn');
+            const zpatternBtn = document.getElementById('zpattern-marking-btn');
+
+            if (isCorrectMoveMarkingMode) {
+                if (correctMoveBtn) correctMoveBtn.classList.add('active');
+                if (activationBtn) activationBtn.classList.remove('active');
+                if (zpatternBtn) zpatternBtn.classList.remove('active');
+            } else {
+                if (correctMoveBtn) correctMoveBtn.classList.remove('active');
             }
 
             updateMarkingStatus();
@@ -922,6 +966,7 @@
         function clearAllMarkings() {
             markedActivations.clear();
             markedZPatterns.clear();
+            markedCorrectMoves.clear();
             updateMarkingStatus();
             renderBoard();
             // 同时清除箭头（用户期望 Clear Marks 能把画面清空）
@@ -1340,13 +1385,14 @@
                     const activationIndex = actualRow * 8 + actualCol;
                     const isMarkedActivation = markedActivations.has(activationIndex);
                     const isMarkedZPattern = markedZPatterns.has(activationIndex);
+                    const isMarkedCorrectMove = markedCorrectMoves.has(activationIndex);
 
                     // 根据标注设置背景色
                     rect.setAttribute("fill", isLight ? "#F0F0F0" : "#D1D1D1");
                     svg.appendChild(rect);
 
-                    // 标注在页面上是“内缩2px”的小方块，这里复刻
-                    if (isMarkedActivation || isMarkedZPattern) {
+                    // 标注在页面上是"内缩2px"的小方块，这里复刻
+                    if (isMarkedActivation || isMarkedZPattern || isMarkedCorrectMove) {
                         const inset = 2;
                         const markedRect = document.createElementNS(svgNS, "rect");
                         markedRect.setAttribute("x", String(col * squareSize + inset));
@@ -1358,9 +1404,11 @@
                         if (isMarkedActivation) {
                             const intensity = markedActivations.get(activationIndex) || 0.8;
                             markedRect.setAttribute("fill", `rgba(239, 68, 68, ${intensity})`);
-                        } else {
+                        } else if (isMarkedZPattern) {
                             const intensity = markedZPatterns.get(activationIndex) || 0.8;
                             markedRect.setAttribute("fill", `rgba(59, 130, 246, ${intensity})`);
+                        } else if (isMarkedCorrectMove) {
+                            markedRect.setAttribute("fill", "rgba(127, 166, 80, 0.6)");
                         }
                         svg.appendChild(markedRect);
                     }
@@ -1551,7 +1599,7 @@
             if (!window.arrowMode) {
                 squares.forEach((square) => {
                     square.style.cursor = '';
-                    if (!square.classList.contains('marked-activation') && !square.classList.contains('marked-zpattern')) {
+                    if (!square.classList.contains('marked-activation') && !square.classList.contains('marked-zpattern') && !square.classList.contains('marked-correct-move')) {
                         square.style.boxShadow = '';
                     }
                 });
@@ -1566,7 +1614,7 @@
                 const squareIndex = actualRow * 8 + actualCol;
 
                 square._arrowClickHandler = function(e) {
-                    if (window.arrowMode && (!isActivationMarkingMode && !isZPatternMarkingMode)) {
+                    if (window.arrowMode && (!isActivationMarkingMode && !isZPatternMarkingMode && !isCorrectMoveMarkingMode)) {
                         e.stopPropagation();
                         handleArrowSquareClick(squareIndex);
                     }
@@ -1574,12 +1622,12 @@
                 
                 square.addEventListener('click', square._arrowClickHandler);
 
-                if (!isActivationMarkingMode && !isZPatternMarkingMode) {
+                if (!isActivationMarkingMode && !isZPatternMarkingMode && !isCorrectMoveMarkingMode) {
                     square.style.cursor = 'pointer';
                     
                     if (selectedArrowFromSquare && selectedArrowFromSquare.index === squareIndex) {
                         square.style.boxShadow = 'inset 0 0 0 3px #3b82f6';
-                    } else if (!square.classList.contains('marked-activation') && !square.classList.contains('marked-zpattern')) {
+                    } else if (!square.classList.contains('marked-activation') && !square.classList.contains('marked-zpattern') && !square.classList.contains('marked-correct-move')) {
                         square.style.boxShadow = '';
                     }
                 }
@@ -1633,7 +1681,7 @@
 
             if (!window.analysisMode) {
                 squares.forEach((square) => {
-                    if (!square.classList.contains('marked-activation') && !square.classList.contains('marked-zpattern')) {
+                    if (!square.classList.contains('marked-activation') && !square.classList.contains('marked-zpattern') && !square.classList.contains('marked-correct-move')) {
                         square.style.boxShadow = '';
                     }
                 });
@@ -1648,7 +1696,7 @@
                 const squareIndex = actualRow * 8 + actualCol;
 
                 square._analysisClickHandler = function(e) {
-                    if (window.analysisMode && (!isActivationMarkingMode && !isZPatternMarkingMode)) {
+                    if (window.analysisMode && (!isActivationMarkingMode && !isZPatternMarkingMode && !isCorrectMoveMarkingMode)) {
                         e.stopPropagation();
                         handleSquareClick(squareIndex);
                     }
@@ -1656,12 +1704,12 @@
                 
                 square.addEventListener('click', square._analysisClickHandler);
 
-                if (!isActivationMarkingMode && !isZPatternMarkingMode) {
+                if (!isActivationMarkingMode && !isZPatternMarkingMode && !isCorrectMoveMarkingMode) {
                     square.style.cursor = 'pointer';
                     
                     if (selectedFromSquare && selectedFromSquare.index === squareIndex) {
                         square.style.boxShadow = 'inset 0 0 0 3px #3b82f6';
-                    } else if (!square.classList.contains('marked-activation') && !square.classList.contains('marked-zpattern')) {
+                    } else if (!square.classList.contains('marked-activation') && !square.classList.contains('marked-zpattern') && !square.classList.contains('marked-correct-move')) {
                         square.style.boxShadow = '';
                     }
                 }

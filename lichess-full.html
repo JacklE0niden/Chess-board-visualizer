@@ -1199,15 +1199,6 @@
                 const d = buildArrowPathD(x1, y1, x2, y2, size);
                 if (!d) return;
 
-                // Shadow (same shape, slight offset)
-                const shadow = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                shadow.setAttribute('class', 'custom-arrow');
-                shadow.setAttribute('d', d);
-                shadow.setAttribute('fill', '#000000');
-                shadow.setAttribute('fill-opacity', Math.min((arrow.opacity ?? 0.5) * 0.20, 0.20));
-                shadow.setAttribute('transform', 'translate(1 1)');
-                svgLayer.appendChild(shadow);
-
                 const shape = document.createElementNS('http://www.w3.org/2000/svg', 'path');
                 shape.setAttribute('class', 'custom-arrow');
                 shape.setAttribute('d', d);
@@ -1230,6 +1221,47 @@
             'K': '♔', 'Q': '♕', 'R': '♖', 'B': '♗', 'N': '♘', 'P': '♙',
             'k': '♚', 'q': '♛', 'r': '♜', 'b': '♝', 'n': '♞', 'p': '♟'
         };
+
+        // SVG棋子资源（用于导出时内嵌，保证导出风格与页面一致）
+        const PIECE_SVG_PATH = {
+            'K': 'pieces/wK.svg',
+            'Q': 'pieces/wQ.svg',
+            'R': 'pieces/wR.svg',
+            'B': 'pieces/wB.svg',
+            'N': 'pieces/wN.svg',
+            'P': 'pieces/wP.svg',
+            'k': 'pieces/bK.svg',
+            'q': 'pieces/bQ.svg',
+            'r': 'pieces/bR.svg',
+            'b': 'pieces/bB.svg',
+            'n': 'pieces/bN.svg',
+            'p': 'pieces/bP.svg'
+        };
+        const _pieceDataUriCache = new Map();
+
+        function _svgTextToDataUri(svgText) {
+            // Base64，避免相对路径导致的导出后丢失棋子
+            const utf8 = encodeURIComponent(svgText).replace(/%([0-9A-F]{2})/g, (_, p1) =>
+                String.fromCharCode(parseInt(p1, 16))
+            );
+            return `data:image/svg+xml;base64,${btoa(utf8)}`;
+        }
+
+        async function _getPieceDataUri(pieceChar) {
+            if (_pieceDataUriCache.has(pieceChar)) return _pieceDataUriCache.get(pieceChar);
+            const path = PIECE_SVG_PATH[pieceChar];
+            if (!path) return null;
+            try {
+                const res = await fetch(path);
+                if (!res.ok) return null;
+                const txt = await res.text();
+                const uri = _svgTextToDataUri(txt);
+                _pieceDataUriCache.set(pieceChar, uri);
+                return uri;
+            } catch {
+                return null;
+            }
+        }
 
         // 更新parseFEN函数，使其与TSX版本一致
         function parseFEN(fen) {
@@ -1278,15 +1310,18 @@
         }
 
         // 导出为SVG
-        function exportToSVG() {
+        async function exportToSVG() {
             const svgNS = "http://www.w3.org/2000/svg";
             const svg = document.createElementNS(svgNS, "svg");
-            svg.setAttribute("width", "320");
-            svg.setAttribute("height", "320");
-            svg.setAttribute("viewBox", "0 0 320 320");
-            svg.setAttribute("xmlns", svgNS);
+            // 取页面真实格子大小（页面通常是 3rem=48px），保证导出和视觉一致
+            const sqEl = document.querySelector('#chessboard .board-square');
+            const squareSize = Math.round(sqEl?.getBoundingClientRect?.().width || 48);
+            const boardPx = squareSize * 8;
 
-            const squareSize = 40; // 每个格子40px
+            svg.setAttribute("width", String(boardPx));
+            svg.setAttribute("height", String(boardPx));
+            svg.setAttribute("viewBox", `0 0 ${boardPx} ${boardPx}`);
+            svg.setAttribute("xmlns", svgNS);
 
             // 绘制棋盘背景
             for (let row = 0; row < 8; row++) {
@@ -1294,10 +1329,10 @@
                     // 当翻转时，黑白格子也要反转，确保h1始终是白格
                     const isLight = isFlipped ? (row + col) % 2 !== 0 : (row + col) % 2 === 0;
                     const rect = document.createElementNS(svgNS, "rect");
-                    rect.setAttribute("x", col * squareSize);
-                    rect.setAttribute("y", row * squareSize);
-                    rect.setAttribute("width", squareSize);
-                    rect.setAttribute("height", squareSize);
+                    rect.setAttribute("x", String(col * squareSize));
+                    rect.setAttribute("y", String(row * squareSize));
+                    rect.setAttribute("width", String(squareSize));
+                    rect.setAttribute("height", String(squareSize));
 
                     // 检查是否有标注
                     const actualRow = isFlipped ? (7 - row) : row;
@@ -1307,19 +1342,28 @@
                     const isMarkedZPattern = markedZPatterns.has(activationIndex);
 
                     // 根据标注设置背景色
-                    let fillColor;
-                    if (isMarkedActivation) {
-                        const intensity = markedActivations.get(activationIndex) || 0.8;
-                        fillColor = `rgba(239, 68, 68, ${intensity})`; // 使用 Map 中的透明度
-                    } else if (isMarkedZPattern) {
-                        const intensity = markedZPatterns.get(activationIndex) || 0.8;
-                        fillColor = `rgba(59, 130, 246, ${intensity})`; // 蓝色标注（可调强度）
-                    } else {
-                        fillColor = isLight ? "#F0F0F0" : "#D1D1D1";
-                    }
-
-                    rect.setAttribute("fill", fillColor);
+                    rect.setAttribute("fill", isLight ? "#F0F0F0" : "#D1D1D1");
                     svg.appendChild(rect);
+
+                    // 标注在页面上是“内缩2px”的小方块，这里复刻
+                    if (isMarkedActivation || isMarkedZPattern) {
+                        const inset = 2;
+                        const markedRect = document.createElementNS(svgNS, "rect");
+                        markedRect.setAttribute("x", String(col * squareSize + inset));
+                        markedRect.setAttribute("y", String(row * squareSize + inset));
+                        markedRect.setAttribute("width", String(squareSize - inset * 2));
+                        markedRect.setAttribute("height", String(squareSize - inset * 2));
+                        markedRect.setAttribute("rx", "2");
+                        markedRect.setAttribute("ry", "2");
+                        if (isMarkedActivation) {
+                            const intensity = markedActivations.get(activationIndex) || 0.8;
+                            markedRect.setAttribute("fill", `rgba(239, 68, 68, ${intensity})`);
+                        } else {
+                            const intensity = markedZPatterns.get(activationIndex) || 0.8;
+                            markedRect.setAttribute("fill", `rgba(59, 130, 246, ${intensity})`);
+                        }
+                        svg.appendChild(markedRect);
+                    }
                 }
             }
 
@@ -1328,14 +1372,14 @@
                 for (let row = 0; row < 8; row++) {
                     // 行号（1-8）- 在最右边一列
                     const rankText = document.createElementNS(svgNS, "text");
-                    rankText.setAttribute("x", 7 * squareSize + 2);
-                    rankText.setAttribute("y", row * squareSize + 12);
-                    rankText.setAttribute("font-size", "10");
+                    rankText.setAttribute("x", String(7 * squareSize + 2));
+                    rankText.setAttribute("y", String(row * squareSize + Math.round(squareSize * 0.25)));
+                    rankText.setAttribute("font-size", String(Math.max(10, Math.round(squareSize * 0.22))));
                     rankText.setAttribute("font-weight", "bold");
                     // 根据格子颜色决定文字颜色（考虑翻转）
                     const isLightSquare = isFlipped ? (row + 7) % 2 !== 0 : (row + 7) % 2 === 0; // col=7
                     rankText.setAttribute("fill", isLightSquare ? "#8A8A8A" : "#FFFFFF");
-                    rankText.setAttribute("font-family", "Arial, sans-serif");
+                    rankText.setAttribute("font-family", "Noto Sans, Arial, sans-serif");
                     rankText.setAttribute("text-anchor", "start");
                     rankText.setAttribute("dominant-baseline", "hanging");
                     // 翻转时行号也需要反转：未翻转row=0显示8；翻转后row=0显示1
@@ -1347,16 +1391,16 @@
                 // 列字母（a-h）- 在最下面一行
                 for (let col = 0; col < 8; col++) {
                     const fileText = document.createElementNS(svgNS, "text");
-                    fileText.setAttribute("x", col * squareSize + 2);
-                    fileText.setAttribute("y", 318);
-                    fileText.setAttribute("font-size", "10");
+                    fileText.setAttribute("x", String(col * squareSize + 2));
+                    fileText.setAttribute("y", String(8 * squareSize - 2));
+                    fileText.setAttribute("font-size", String(Math.max(10, Math.round(squareSize * 0.22))));
                     fileText.setAttribute("font-weight", "bold");
                     // 根据格子颜色决定文字颜色（考虑翻转）
                     const isLightSquare = isFlipped ? (7 + col) % 2 === 0 : (7 + col) % 2 !== 0; // row=7
                     fileText.setAttribute("fill", isLightSquare ? "#8A8A8A" : "#FFFFFF");
-                    fileText.setAttribute("font-family", "Arial, sans-serif");
+                    fileText.setAttribute("font-family", "Noto Sans, Arial, sans-serif");
                     fileText.setAttribute("text-anchor", "start");
-                    fileText.setAttribute("dominant-baseline", "auto");
+                    fileText.setAttribute("dominant-baseline", "alphabetic");
                     const fileLetters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
                     // 翻转时列字母要反转：未翻转从左到右a-h；翻转后从左到右h-a
                     const displayCol = isFlipped ? (7 - col) : col;
@@ -1372,17 +1416,32 @@
                 for (let col = 0; col < 8; col++) {
                     const piece = displayBoard[row][col];
                     if (piece) {
-                        // 使用Unicode符号绘制棋子
-                        const pieceText = document.createElementNS(svgNS, "text");
-                        pieceText.setAttribute("x", col * squareSize + squareSize / 2);
-                        pieceText.setAttribute("y", row * squareSize + squareSize / 2 + 6); // 精确居中对齐
-                        pieceText.setAttribute("font-size", "28"); // 稍微调小以适应格子
-                        pieceText.setAttribute("font-family", "Arial Unicode MS, Arial, sans-serif");
-                        pieceText.setAttribute("text-anchor", "middle");
-                        pieceText.setAttribute("dominant-baseline", "central"); // 垂直居中
-                        pieceText.setAttribute("fill", piece === piece.toUpperCase() ? "#ffffff" : "#000000");
-                        pieceText.textContent = PIECE_UNICODE[piece] || piece;
-                        svg.appendChild(pieceText);
+                        // 导出时内嵌棋子SVG（与页面显示一致）
+                        const uri = await _getPieceDataUri(piece);
+                        if (uri) {
+                            const img = document.createElementNS(svgNS, "image");
+                            const pieceSize = Math.round(squareSize * 0.93);
+                            const x = col * squareSize + (squareSize - pieceSize) / 2;
+                            const y = row * squareSize + (squareSize - pieceSize) / 2;
+                            img.setAttribute("x", String(x));
+                            img.setAttribute("y", String(y));
+                            img.setAttribute("width", String(pieceSize));
+                            img.setAttribute("height", String(pieceSize));
+                            img.setAttribute("href", uri);
+                            svg.appendChild(img);
+                        } else {
+                            // fallback：Unicode
+                            const pieceText = document.createElementNS(svgNS, "text");
+                            pieceText.setAttribute("x", String(col * squareSize + squareSize / 2));
+                            pieceText.setAttribute("y", String(row * squareSize + squareSize / 2));
+                            pieceText.setAttribute("font-size", String(Math.round(squareSize * 0.70)));
+                            pieceText.setAttribute("font-family", "Arial Unicode MS, Arial, sans-serif");
+                            pieceText.setAttribute("text-anchor", "middle");
+                            pieceText.setAttribute("dominant-baseline", "central");
+                            pieceText.setAttribute("fill", piece === piece.toUpperCase() ? "#ffffff" : "#000000");
+                            pieceText.textContent = PIECE_UNICODE[piece] || piece;
+                            svg.appendChild(pieceText);
+                        }
                     }
 
                     // 绘制激活值（如果有）
@@ -1392,26 +1451,34 @@
                     const activation = currentActivations[activationIndex] || 0;
 
                     if (activation !== 0 && currentMode === 'analysis') {
-                        // 如果在最右边列，激活值显示在左上角
-                        const centerX = col === 7 ? col * squareSize + 8 : col * squareSize + 32;
+                        // 激活徽标：对齐页面 activation-badge（红色圆角矩形 + 白字）
+                        const badgeW = Math.round(squareSize * 0.36);
+                        const badgeH = Math.round(squareSize * 0.20);
+                        const inset = 2;
+                        const bx = (col === 7)
+                            ? (col * squareSize + inset) // 最右列放左侧，避免和行号冲突
+                            : (col * squareSize + squareSize - badgeW - inset);
+                        const by = row * squareSize + inset;
 
-                        // 创建背景圆圈
-                        const circle = document.createElementNS(svgNS, "circle");
-                        circle.setAttribute("cx", centerX.toString());
-                        circle.setAttribute("cy", (row * squareSize + 8).toString());
-                        circle.setAttribute("r", "6");
-                        circle.setAttribute("fill", "rgba(220, 53, 69, 0.9)");
-                        svg.appendChild(circle);
+                        const badge = document.createElementNS(svgNS, "rect");
+                        badge.setAttribute("x", String(bx));
+                        badge.setAttribute("y", String(by));
+                        badge.setAttribute("width", String(badgeW));
+                        badge.setAttribute("height", String(badgeH));
+                        badge.setAttribute("rx", "2");
+                        badge.setAttribute("ry", "2");
+                        badge.setAttribute("fill", "rgba(220, 53, 69, 0.9)");
+                        svg.appendChild(badge);
 
-                        // 创建激活值文本
                         const text = document.createElementNS(svgNS, "text");
-                        text.setAttribute("x", centerX.toString());
-                        text.setAttribute("y", (row * squareSize + 11).toString());
-                        text.setAttribute("font-size", "6");
-                        text.setAttribute("font-weight", "bold");
-                        text.setAttribute("fill", "white");
-                        text.setAttribute("font-family", "Arial, sans-serif");
+                        text.setAttribute("x", String(bx + badgeW / 2));
+                        text.setAttribute("y", String(by + badgeH / 2));
+                        text.setAttribute("font-size", String(Math.max(6, Math.round(squareSize * 0.14))));
+                        text.setAttribute("font-weight", "700");
+                        text.setAttribute("fill", "#ffffff");
+                        text.setAttribute("font-family", "Noto Sans, Arial, sans-serif");
                         text.setAttribute("text-anchor", "middle");
+                        text.setAttribute("dominant-baseline", "central");
                         text.textContent = Math.abs(activation).toFixed(2);
                         svg.appendChild(text);
                     }
@@ -1420,9 +1487,6 @@
 
             // 绘制箭头
             if (arrows.length > 0) {
-                const defs = document.createElementNS(svgNS, "defs");
-                svg.appendChild(defs);
-
                 arrows.forEach((arrow) => {
                     const from = parseSquareNotation(arrow.from);
                     const to = parseSquareNotation(arrow.to);
@@ -1441,13 +1505,6 @@
                     const size = getArrowSize(arrow);
                     const d = buildArrowPathD(x1, y1, x2, y2, size);
                     if (!d) return;
-
-                    const shadow = document.createElementNS(svgNS, "path");
-                    shadow.setAttribute("d", d);
-                    shadow.setAttribute("fill", "#000000");
-                    shadow.setAttribute("fill-opacity", Math.min((arrow.opacity ?? 0.5) * 0.20, 0.20).toString());
-                    shadow.setAttribute("transform", "translate(1 1)");
-                    svg.appendChild(shadow);
 
                     const shape = document.createElementNS(svgNS, "path");
                     shape.setAttribute("d", d);

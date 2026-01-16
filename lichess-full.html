@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
-    <script src="chess-board.js?v=20240104_001"></script>
+    <script src="chess-board.js?v=20260116_001"></script>
     <style>
         :root {
             --c-accent: #7fa650;
@@ -20,8 +20,8 @@
             --c-font-bright: #fff;
             --c-border: #404040;
             --c-shadow: rgba(0,0,0,0.3);
-            --c-board-bg-light: #f0d9b5;
-            --c-board-bg-dark: #b58863;
+            --c-board-bg-light: #F0F0F0;
+            --c-board-bg-dark: #D1D1D1;
             --c-good: #7fa650;
             --c-bad: #dc3545;
             --c-warn: #ff6b35;
@@ -185,11 +185,11 @@
         }
 
         .coord.dark {
-            color: var(--c-board-bg-light); /* 浅灰色用于深色格子 */
+            color: #F0F0F0; /* 浅色文字用于深色格子 */
         }
 
         .coord.light {
-            color: var(--c-board-bg-dark); /* 深色文字用于浅色格子 */
+            color: #D1D1D1; /* 深色文字用于浅色格子 */
         }
 
         .coord.rank {
@@ -508,21 +508,38 @@
             width: 8px;
         }
 
-        ::-webkit-scrollbar-track {
-            background: rgba(255,255,255,0.05);
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: rgba(255,255,255,0.2);
+        /* 强度调节滑动条弹窗 */
+        .intensity-popover {
+            position: fixed;
+            background: #262421;
+            border: 1px solid #404040;
             border-radius: 4px;
+            padding: 8px;
+            z-index: 999999;
+            display: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            width: 120px;
+            pointer-events: auto;
         }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: rgba(255,255,255,0.3);
+        .intensity-popover input {
+            width: 100%;
+            cursor: pointer;
+        }
+        .intensity-popover .value-label {
+            font-size: 10px;
+            color: #bababa;
         }
     </style>
 </head>
 <body>
+    <!-- 强度调节滑动条 -->
+    <div id="intensity-popover" class="intensity-popover">
+        <div class="value-label">强度: <span id="intensity-value">80</span>%</div>
+        <input type="range" id="intensity-slider" min="5" max="100" step="5" value="80">
+    </div>
     <!-- 顶部导航栏 -->
     <header class="lichess-header">
         <div class="max-w-7xl mx-auto px-4 py-3">
@@ -1269,11 +1286,13 @@
                     // 根据标注设置背景色
                     let fillColor;
                     if (isMarkedActivation) {
-                        fillColor = "rgba(239, 68, 68, 0.8)"; // 红色标注
+                        const intensity = markedActivations.get(activationIndex) || 0.8;
+                        fillColor = `rgba(239, 68, 68, ${intensity})`; // 使用 Map 中的透明度
                     } else if (isMarkedZPattern) {
-                        fillColor = "rgba(59, 130, 246, 0.8)"; // 蓝色标注
+                        const intensity = markedZPatterns.get(activationIndex) || 0.8;
+                        fillColor = `rgba(59, 130, 246, ${intensity})`; // 蓝色标注（可调强度）
                     } else {
-                        fillColor = isLight ? "#f0d9b5" : "#b58863";
+                        fillColor = isLight ? "#F0F0F0" : "#D1D1D1";
                     }
 
                     rect.setAttribute("fill", fillColor);
@@ -1292,7 +1311,7 @@
                     rankText.setAttribute("font-weight", "bold");
                     // 根据格子颜色决定文字颜色（考虑翻转）
                     const isLightSquare = isFlipped ? (row + 7) % 2 !== 0 : (row + 7) % 2 === 0; // col=7
-                    rankText.setAttribute("fill", isLightSquare ? "#654321" : "#ffffff");
+                    rankText.setAttribute("fill", isLightSquare ? "#D1D1D1" : "#F0F0F0");
                     rankText.setAttribute("font-family", "Arial, sans-serif");
                     rankText.setAttribute("text-anchor", "start");
                     rankText.setAttribute("dominant-baseline", "hanging");
@@ -1311,7 +1330,7 @@
                     fileText.setAttribute("font-weight", "bold");
                     // 根据格子颜色决定文字颜色（考虑翻转）
                     const isLightSquare = isFlipped ? (7 + col) % 2 === 0 : (7 + col) % 2 !== 0; // row=7
-                    fileText.setAttribute("fill", isLightSquare ? "#654321" : "#ffffff");
+                    fileText.setAttribute("fill", isLightSquare ? "#D1D1D1" : "#F0F0F0");
                     fileText.setAttribute("font-family", "Arial, sans-serif");
                     fileText.setAttribute("text-anchor", "start");
                     fileText.setAttribute("dominant-baseline", "auto");

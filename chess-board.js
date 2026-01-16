@@ -78,8 +78,54 @@ let currentMode = 'analysis';
 // 标注状态
 let isActivationMarkingMode = false;
 let isZPatternMarkingMode = false;
-let markedActivations = new Set(); // 标记为激活的格子
-let markedZPatterns = new Set(); // 标记为Z模式的格子
+let markedActivations = new Map(); // 使用 Map 存储索引和对应的透明度 (0-1)
+let markedZPatterns = new Map(); // 使用 Map 存储索引和对应的透明度 (0-1)
+
+// 当前正在调节强度的目标
+let activeIntensityTarget = null; // { type: 'activation' | 'zpattern', index: number } | null
+
+// 单击/双击冲突处理：单击延迟执行，双击优先
+let pendingMarkClickTimer = null;
+let pendingMarkClickKey = null; // `${type}:${index}`
+
+// 根据 activationIndex 找到当前 DOM 中对应的格子元素（考虑翻转后的显示顺序）
+function getSquareElementByActivationIndex(activationIndex) {
+    const squares = document.querySelectorAll('#chessboard .board-square');
+    if (!squares || squares.length !== 64) return null;
+    const r = Math.floor(activationIndex / 8);
+    const c = activationIndex % 8;
+    const displayIdx = isFlipped ? ((7 - r) * 8 + (7 - c)) : activationIndex;
+    return squares[displayIdx] || null;
+}
+
+function positionIntensityPopoverNearSquare(squareEl) {
+    const popover = document.getElementById('intensity-popover');
+    if (!popover || !squareEl) return;
+
+    // 先显示以便拿到实际尺寸
+    popover.style.display = 'flex';
+    popover.style.visibility = 'visible';
+    popover.style.opacity = '1';
+
+    const rect = squareEl.getBoundingClientRect();
+    const popRect = popover.getBoundingClientRect();
+    const popW = popRect.width || 120;
+    const popH = popRect.height || 48;
+
+    const centerX = rect.left + rect.width / 2;
+    let left = centerX - popW / 2;
+    left = Math.max(8, Math.min(left, window.innerWidth - popW - 8));
+
+    // 默认显示在格子下方；若下方放不下，自动翻到上方
+    let top = rect.bottom + 8;
+    if (top + popH + 8 > window.innerHeight) {
+        top = rect.top - popH - 8;
+    }
+    top = Math.max(8, Math.min(top, window.innerHeight - popH - 8));
+
+    popover.style.left = `${Math.round(left)}px`;
+    popover.style.top = `${Math.round(top)}px`;
+}
 
 // FEN解析函数
 function parseFEN(fen) {
@@ -326,10 +372,18 @@ function renderBoard() {
                 const isMarkedZPattern = markedZPatterns.has(activationIndex);
 
                 // 添加标注CSS类（留边距效果）
+                // 先清除可能残留的内联背景（避免取消标注后残留）
+                square.style.removeProperty('background');
+                square.style.removeProperty('background-color');
                 if (isMarkedActivation) {
                     square.classList.add('marked-activation');
+                    const intensity = markedActivations.get(activationIndex) || 0.8;
+                    // CSS里 marked-activation 使用了 !important，这里也用 important 覆盖到不同强度
+                    square.style.setProperty('background', `rgba(239, 68, 68, ${intensity})`, 'important');
                 } else if (isMarkedZPattern) {
                     square.classList.add('marked-zpattern');
+                    const intensity = markedZPatterns.get(activationIndex) || 0.8;
+                    square.style.setProperty('background', `rgba(59, 130, 246, ${intensity})`, 'important');
                 }
 
                 // 根据标注模式设置光标样式和类
@@ -338,28 +392,94 @@ function renderBoard() {
                     square.classList.add('marking-mode');
                 }
 
-                // 添加点击事件处理
+                const toggleMark = (type, idx) => {
+                    if (type === 'activation') {
+                        if (markedActivations.has(idx)) markedActivations.delete(idx);
+                        else markedActivations.set(idx, 0.8);
+                    } else {
+                        if (markedZPatterns.has(idx)) markedZPatterns.delete(idx);
+                        else markedZPatterns.set(idx, 0.8);
+                    }
+                    renderBoard();
+                    updateMarkingStatus();
+                };
+
+                const openIntensityPopover = (type, idx) => {
+                    const popover = document.getElementById('intensity-popover');
+                    const slider = document.getElementById('intensity-slider');
+                    const valueDisplay = document.getElementById('intensity-value');
+                    if (!popover || !slider || !valueDisplay) return;
+
+                    // 如果还没染色，双击时自动染色（无论之前是否染过）
+                    if (type === 'activation') {
+                        if (!markedActivations.has(idx)) markedActivations.set(idx, 0.8);
+                    } else {
+                        if (!markedZPatterns.has(idx)) markedZPatterns.set(idx, 0.8);
+                    }
+                    renderBoard();
+                    updateMarkingStatus();
+
+                    activeIntensityTarget = { type, index: idx };
+                    const currentIntensity =
+                        type === 'activation'
+                            ? (markedActivations.get(idx) || 0.8)
+                            : (markedZPatterns.get(idx) || 0.8);
+
+                    slider.value = String(Math.round(currentIntensity * 100));
+                    valueDisplay.textContent = slider.value;
+
+                    // 关键：renderBoard 后 square DOM 已重建，必须重新找当前格子再定位
+                    const squareEl = getSquareElementByActivationIndex(idx);
+                    positionIntensityPopoverNearSquare(squareEl);
+                };
+
+                const cancelPendingClick = (key) => {
+                    if (pendingMarkClickTimer && pendingMarkClickKey === key) {
+                        clearTimeout(pendingMarkClickTimer);
+                        pendingMarkClickTimer = null;
+                        pendingMarkClickKey = null;
+                    }
+                };
+
+                // 添加点击事件处理（延迟，避免打断 dblclick）
                 square.addEventListener('click', function(e) {
                     if (typeof window.arrowMode !== 'undefined' && window.arrowMode) {
                         return;
                     }
                     
                     if (isActivationMarkingMode) {
-                        if (markedActivations.has(activationIndex)) {
-                            markedActivations.delete(activationIndex);
-                        } else {
-                            markedActivations.add(activationIndex);
-                        }
-                        renderBoard();
-                        updateMarkingStatus();
+                        const key = `activation:${activationIndex}`;
+                        cancelPendingClick(key);
+                        pendingMarkClickKey = key;
+                        pendingMarkClickTimer = setTimeout(() => {
+                            toggleMark('activation', activationIndex);
+                            pendingMarkClickTimer = null;
+                            pendingMarkClickKey = null;
+                        }, 220);
                     } else if (isZPatternMarkingMode) {
-                        if (markedZPatterns.has(activationIndex)) {
-                            markedZPatterns.delete(activationIndex);
-                        } else {
-                            markedZPatterns.add(activationIndex);
-                        }
-                        renderBoard();
-                        updateMarkingStatus();
+                        const key = `zpattern:${activationIndex}`;
+                        cancelPendingClick(key);
+                        pendingMarkClickKey = key;
+                        pendingMarkClickTimer = setTimeout(() => {
+                            toggleMark('zpattern', activationIndex);
+                            pendingMarkClickTimer = null;
+                            pendingMarkClickKey = null;
+                        }, 220);
+                    }
+                });
+
+                // 添加双击事件处理 - 弹出强度调节器
+                square.addEventListener('dblclick', function(e) {
+                    if (!isActivationMarkingMode && !isZPatternMarkingMode) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    if (isActivationMarkingMode) {
+                        cancelPendingClick(`activation:${activationIndex}`);
+                        openIntensityPopover('activation', activationIndex);
+                    } else if (isZPatternMarkingMode) {
+                        cancelPendingClick(`zpattern:${activationIndex}`);
+                        openIntensityPopover('zpattern', activationIndex);
                     }
                 });
 
@@ -421,3 +541,60 @@ function renderBoard() {
     // 更新状态指示器
     updateStatusIndicator();
 }
+
+// 滑动条事件处理
+document.addEventListener('DOMContentLoaded', function() {
+    const slider = document.getElementById('intensity-slider');
+    const valueDisplay = document.getElementById('intensity-value');
+    const popover = document.getElementById('intensity-popover');
+    let hideTimer = null;
+
+    const hidePopover = () => {
+        if (!popover) return;
+        popover.style.display = 'none';
+        activeIntensityTarget = null;
+    };
+
+    // 鼠标离开滑条区域就隐藏（轻量交互）；进入时取消隐藏
+    if (popover) {
+        popover.addEventListener('mouseenter', () => {
+            if (hideTimer) {
+                clearTimeout(hideTimer);
+                hideTimer = null;
+            }
+        });
+        popover.addEventListener('mouseleave', () => {
+            // 给一个很小的缓冲，避免误触（尤其是触控板/快速移动）
+            if (hideTimer) clearTimeout(hideTimer);
+            hideTimer = setTimeout(() => {
+                hidePopover();
+                hideTimer = null;
+            }, 150);
+        });
+    }
+
+    if (slider) {
+        slider.addEventListener('input', function() {
+            if (activeIntensityTarget !== null) {
+                const intensity = parseInt(this.value) / 100;
+                valueDisplay.textContent = this.value;
+                if (activeIntensityTarget.type === 'activation') {
+                    markedActivations.set(activeIntensityTarget.index, intensity);
+                } else {
+                    markedZPatterns.set(activeIntensityTarget.index, intensity);
+                }
+                renderBoard();
+                // 拖动过程中会触发重绘，重绘后把滑条继续贴在当前格子附近
+                const squareEl = getSquareElementByActivationIndex(activeIntensityTarget.index);
+                positionIntensityPopoverNearSquare(squareEl);
+            }
+        });
+    }
+
+    // 点击页面其他地方隐藏弹窗
+    document.addEventListener('mousedown', function(e) {
+        if (popover && !popover.contains(e.target) && !e.target.closest('.board-square')) {
+            hidePopover();
+        }
+    });
+});

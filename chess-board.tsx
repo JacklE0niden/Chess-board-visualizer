@@ -578,8 +578,8 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
               // 新增：检查是否为选中的格子
               const isSelectedSquare = selectedSquare === activationIndex;
               
-              // 获取基础背景色
-              const baseColor = isLight ? 'bg-amber-100' : 'bg-amber-800';
+                              // 获取基础背景色 - 使用灰色配色 #F0F0F0 / #D1D1D1
+                              const baseColor = isLight ? 'bg-[#F0F0F0]' : 'bg-[#D1D1D1]';
               
               // 确定最终背景色
               let finalBackgroundColor;
@@ -1036,7 +1036,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
                                   key={`${displayRowIndex}-${colIndex}`}
                                   className={`
                                     w-10 h-10 relative flex items-center justify-center
-                                    ${isLight ? 'bg-amber-100' : 'bg-amber-800'}
+                                    ${isLight ? 'bg-[#F0F0F0]' : 'bg-[#D1D1D1]'}
                                     ${isMoveFromSquare ? 'bg-green-400' : ''}
                                     ${isMoveToSquare ? 'bg-green-600' : ''}
                                   `}

@@ -1372,7 +1372,8 @@
                 for (let row = 0; row < 8; row++) {
                     // 行号（1-8）- 在最右边一列
                     const rankText = document.createElementNS(svgNS, "text");
-                    rankText.setAttribute("x", String(7 * squareSize + 2));
+                    // 对齐到右上角：靠最右边缘（与前端 right:2px 一致）
+                    rankText.setAttribute("x", String(8 * squareSize - 2));
                     rankText.setAttribute("y", String(row * squareSize + Math.round(squareSize * 0.25)));
                     rankText.setAttribute("font-size", String(Math.max(10, Math.round(squareSize * 0.22))));
                     rankText.setAttribute("font-weight", "bold");
@@ -1380,7 +1381,7 @@
                     const isLightSquare = isFlipped ? (row + 7) % 2 !== 0 : (row + 7) % 2 === 0; // col=7
                     rankText.setAttribute("fill", isLightSquare ? "#8A8A8A" : "#FFFFFF");
                     rankText.setAttribute("font-family", "Noto Sans, Arial, sans-serif");
-                    rankText.setAttribute("text-anchor", "start");
+                    rankText.setAttribute("text-anchor", "end");
                     rankText.setAttribute("dominant-baseline", "hanging");
                     // 翻转时行号也需要反转：未翻转row=0显示8；翻转后row=0显示1
                     const displayRow = isFlipped ? (7 - row) : row;

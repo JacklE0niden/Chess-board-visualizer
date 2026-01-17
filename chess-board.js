@@ -78,8 +78,10 @@ let currentMode = 'analysis';
 // 标注状态
 let isActivationMarkingMode = false;
 let isZPatternMarkingMode = false;
+let isCorrectMoveMarkingMode = false;
 let markedActivations = new Map(); // 使用 Map 存储索引和对应的透明度 (0-1)
 let markedZPatterns = new Map(); // 使用 Map 存储索引和对应的透明度 (0-1)
+let markedCorrectMoves = new Set(); // 使用 Set 存储被标记为正确move的格子索引
 
 // 当前正在调节强度的目标
 let activeIntensityTarget = null; // { type: 'activation' | 'zpattern', index: number } | null
@@ -242,6 +244,10 @@ function updateMarkingStatus() {
         statusDiv.style.display = 'block';
         modeText.textContent = '🔵 Z模式标注模式';
         countText.textContent = `${markedZPatterns.size} 个格子已标注`;
+    } else if (isCorrectMoveMarkingMode) {
+        statusDiv.style.display = 'block';
+        modeText.textContent = '✅ 正确move标注模式';
+        countText.textContent = `${markedCorrectMoves.size} 个格子已标注`;
     } else {
         statusDiv.style.display = 'none';
     }
@@ -251,13 +257,16 @@ function updateMarkingStatus() {
 function toggleActivationMarking() {
     isActivationMarkingMode = !isActivationMarkingMode;
     isZPatternMarkingMode = false; // 互斥
+    isCorrectMoveMarkingMode = false; // 互斥
 
     const activationBtn = document.getElementById('activation-marking-btn');
     const zpatternBtn = document.getElementById('zpattern-marking-btn');
+    const correctMoveBtn = document.getElementById('correct-move-marking-btn');
 
     if (isActivationMarkingMode) {
         activationBtn.classList.add('active');
         zpatternBtn.classList.remove('active');
+        if (correctMoveBtn) correctMoveBtn.classList.remove('active');
     } else {
         activationBtn.classList.remove('active');
     }
@@ -270,15 +279,40 @@ function toggleActivationMarking() {
 function toggleZPatternMarking() {
     isZPatternMarkingMode = !isZPatternMarkingMode;
     isActivationMarkingMode = false; // 互斥
+    isCorrectMoveMarkingMode = false; // 互斥
 
     const activationBtn = document.getElementById('activation-marking-btn');
     const zpatternBtn = document.getElementById('zpattern-marking-btn');
+    const correctMoveBtn = document.getElementById('correct-move-marking-btn');
 
     if (isZPatternMarkingMode) {
         zpatternBtn.classList.add('active');
         activationBtn.classList.remove('active');
+        if (correctMoveBtn) correctMoveBtn.classList.remove('active');
     } else {
         zpatternBtn.classList.remove('active');
+    }
+
+    updateMarkingStatus();
+    renderBoard(); // 重新渲染以更新光标样式
+}
+
+// 切换正确move标注模式
+function toggleCorrectMoveMarking() {
+    isCorrectMoveMarkingMode = !isCorrectMoveMarkingMode;
+    isActivationMarkingMode = false; // 互斥
+    isZPatternMarkingMode = false; // 互斥
+
+    const correctMoveBtn = document.getElementById('correct-move-marking-btn');
+    const activationBtn = document.getElementById('activation-marking-btn');
+    const zpatternBtn = document.getElementById('zpattern-marking-btn');
+
+    if (isCorrectMoveMarkingMode) {
+        if (correctMoveBtn) correctMoveBtn.classList.add('active');
+        if (activationBtn) activationBtn.classList.remove('active');
+        if (zpatternBtn) zpatternBtn.classList.remove('active');
+    } else {
+        if (correctMoveBtn) correctMoveBtn.classList.remove('active');
     }
 
     updateMarkingStatus();
@@ -289,6 +323,7 @@ function toggleZPatternMarking() {
 function clearAllMarkings() {
     markedActivations.clear();
     markedZPatterns.clear();
+    markedCorrectMoves.clear();
     updateMarkingStatus();
     renderBoard();
 }
@@ -326,6 +361,7 @@ window.toggleCoordinates = toggleCoordinates;
 window.updateMarkingStatus = updateMarkingStatus;
 window.toggleActivationMarking = toggleActivationMarking;
 window.toggleZPatternMarking = toggleZPatternMarking;
+window.toggleCorrectMoveMarking = toggleCorrectMoveMarking;
 window.clearAllMarkings = clearAllMarkings;
 window.updateBoard = updateBoard;
 window.renderBoard = renderBoard;
@@ -359,7 +395,7 @@ function renderBoard() {
 
                 square.className = `board-square ${isLight ? 'light' : 'dark'}`;
                 // 清除之前的标注类
-                square.classList.remove('marked-activation', 'marked-zpattern');
+                square.classList.remove('marked-activation', 'marked-zpattern', 'marked-correct-move');
 
                 // 计算实际的激活值索引
                 const actualRow = isFlipped ? (7 - row) : row;
@@ -370,6 +406,7 @@ function renderBoard() {
                 // 检查是否被标注
                 const isMarkedActivation = markedActivations.has(activationIndex);
                 const isMarkedZPattern = markedZPatterns.has(activationIndex);
+                const isMarkedCorrectMove = markedCorrectMoves.has(activationIndex);
 
                 // 添加标注CSS类（留边距效果）
                 // 先清除可能残留的内联背景（避免取消标注后残留）
@@ -384,10 +421,12 @@ function renderBoard() {
                     square.classList.add('marked-zpattern');
                     const intensity = markedZPatterns.get(activationIndex) || 0.8;
                     square.style.setProperty('background', `rgba(59, 130, 246, ${intensity})`, 'important');
+                } else if (isMarkedCorrectMove) {
+                    square.classList.add('marked-correct-move');
                 }
 
                 // 根据标注模式设置光标样式和类
-                if (isActivationMarkingMode || isZPatternMarkingMode) {
+                if (isActivationMarkingMode || isZPatternMarkingMode || isCorrectMoveMarkingMode) {
                     square.style.cursor = 'pointer';
                     square.classList.add('marking-mode');
                 }
@@ -396,9 +435,12 @@ function renderBoard() {
                     if (type === 'activation') {
                         if (markedActivations.has(idx)) markedActivations.delete(idx);
                         else markedActivations.set(idx, 0.8);
-                    } else {
+                    } else if (type === 'zpattern') {
                         if (markedZPatterns.has(idx)) markedZPatterns.delete(idx);
                         else markedZPatterns.set(idx, 0.8);
+                    } else if (type === 'correctmove') {
+                        if (markedCorrectMoves.has(idx)) markedCorrectMoves.delete(idx);
+                        else markedCorrectMoves.add(idx);
                     }
                     renderBoard();
                     updateMarkingStatus();
@@ -462,6 +504,15 @@ function renderBoard() {
                         pendingMarkClickKey = key;
                         pendingMarkClickTimer = setTimeout(() => {
                             toggleMark('zpattern', activationIndex);
+                            pendingMarkClickTimer = null;
+                            pendingMarkClickKey = null;
+                        }, 220);
+                    } else if (isCorrectMoveMarkingMode) {
+                        const key = `correctmove:${activationIndex}`;
+                        cancelPendingClick(key);
+                        pendingMarkClickKey = key;
+                        pendingMarkClickTimer = setTimeout(() => {
+                            toggleMark('correctmove', activationIndex);
                             pendingMarkClickTimer = null;
                             pendingMarkClickKey = null;
                         }, 220);
